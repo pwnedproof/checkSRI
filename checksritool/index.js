@@ -1,4 +1,3 @@
-```js
 const https = require('https');
 const http = require('http');
 
@@ -17,24 +16,24 @@ const EXCLUDED_DOMAINS = [
     'fonts.googleapis.com',
     'fonts.gstatic.com',
     'cdn.jsdelivr.net',
-    'fonts.google',
+    'fonts.google'
 ];
 
 /**
  * Fetch content from URL
  */
 async function fetchUrl(urlString) {
-    return new Promise((resolve, reject) => {
-        const protocol = urlString.startsWith('https') ? https : http;
+    return new Promise(function(resolve, reject) {
+        var protocol = urlString.startsWith('https') ? https : http;
 
-        protocol.get(urlString, { timeout: 10000 }, (res) => {
-            let data = '';
+        protocol.get(urlString, { timeout: 10000 }, function(res) {
+            var data = '';
 
-            res.on('data', (chunk) => {
+            res.on('data', function(chunk) {
                 data += chunk;
             });
 
-            res.on('end', () => {
+            res.on('end', function() {
                 resolve(data);
             });
         }).on('error', reject);
@@ -46,13 +45,13 @@ async function fetchUrl(urlString) {
  */
 function isExcludedDomain(urlString) {
     try {
-        const urlObj = new URL(urlString);
-        const hostname = urlObj.hostname.toLowerCase();
+        var urlObj = new URL(urlString);
+        var hostname = urlObj.hostname.toLowerCase();
 
-        return EXCLUDED_DOMAINS.some(excluded =>
-            hostname.includes(excluded.toLowerCase())
-        );
-    } catch {
+        return EXCLUDED_DOMAINS.some(function(excluded) {
+            return hostname.includes(excluded.toLowerCase());
+        });
+    } catch (error) {
         return false;
     }
 }
@@ -68,14 +67,14 @@ function hasSRI(tag) {
  * Extract external resources from HTML
  */
 function extractResources(html) {
-    const resources = [];
+    var resources = [];
 
     // Match script tags with src
-    const scriptRegex = /<script[^>]*src=["']([^"']+)["'][^>]*>/gi;
-    let match;
+    var scriptRegex = /<script[^>]*src=["']([^"']+)["'][^>]*>/gi;
+    var match;
 
     while ((match = scriptRegex.exec(html)) !== null) {
-        const src = match[1];
+        var src = match[1];
 
         if (src && !isExcludedDomain(src)) {
             resources.push({
@@ -88,11 +87,10 @@ function extractResources(html) {
     }
 
     // Match stylesheet link tags
-    const linkRegex =
-        /<link[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi;
+    var linkRegex = /<link[^>]*rel=["']stylesheet["'][^>]*href=["']([^"']+)["'][^>]*>/gi;
 
     while ((match = linkRegex.exec(html)) !== null) {
-        const href = match[1];
+        var href = match[1];
 
         if (href && !isExcludedDomain(href)) {
             resources.push({
@@ -119,8 +117,8 @@ function resolveUrl(baseUrl, relativeUrl) {
     }
 
     if (relativeUrl.startsWith('//')) {
-        const baseObj = new URL(baseUrl);
-        return `${baseObj.protocol}${relativeUrl}`;
+        var baseObj = new URL(baseUrl);
+        return baseObj.protocol + relativeUrl;
     }
 
     return new URL(relativeUrl, baseUrl).toString();
@@ -131,86 +129,106 @@ function resolveUrl(baseUrl, relativeUrl) {
  */
 async function checkSRI(urlString) {
     try {
-        console.log(`📥 Fetching ${urlString}...\n`);
+        console.log('Fetching ' + urlString + '...\n');
 
-        const html = await fetchUrl(urlString);
-        const resources = extractResources(html);
+        var html = await fetchUrl(urlString);
+        var resources = extractResources(html);
 
         if (resources.length === 0) {
             console.log(
-                'ℹ️ No external resources found (excluding social media, analytics, and fonts)'
+                'No external resources found (excluding social media, analytics, and fonts)'
             );
             return;
         }
 
-        const withSRI = resources.filter(resource => resource.hasSRI);
-        const withoutSRI = resources.filter(resource => !resource.hasSRI);
+        var withSRI = resources.filter(function(resource) {
+            return resource.hasSRI;
+        });
 
-        // ==============================
+        var withoutSRI = resources.filter(function(resource) {
+            return !resource.hasSRI;
+        });
+
+        // ========================================
         // WITH SRI
-        // ==============================
+        // ========================================
 
-        console.log('\n');
+        console.log('');
         console.log('========================================');
         console.log('              WITH SRI');
-        console.log('========================================\n');
+        console.log('========================================');
+        console.log('');
 
         if (withSRI.length === 0) {
-            console.log('No resources with SRI found.\n');
+            console.log('No resources with SRI found.');
+            console.log('');
         } else {
-            for (const resource of withSRI) {
+            for (var i = 0; i < withSRI.length; i++) {
                 console.log(
-                    `✅ ${resource.type.toUpperCase()}: ${resource.url}`
+                    '[+] ' +
+                    withSRI[i].type.toUpperCase() +
+                    ': ' +
+                    withSRI[i].url
                 );
             }
 
-            console.log(`\nTotal with SRI: ${withSRI.length}\n`);
+            console.log('');
+            console.log('Total with SRI: ' + withSRI.length);
+            console.log('');
         }
 
-        // ==============================
+        // ========================================
         // NO SRI
-        // ==============================
+        // ========================================
 
-        console.log('\n');
+        console.log('');
         console.log('========================================');
         console.log('               NO SRI');
-        console.log('========================================\n');
+        console.log('========================================');
+        console.log('');
 
         if (withoutSRI.length === 0) {
-            console.log('All resources have SRI.\n');
+            console.log('All resources have SRI.');
+            console.log('');
         } else {
-            for (const resource of withoutSRI) {
+            for (var j = 0; j < withoutSRI.length; j++) {
                 console.log(
-                    `❌ ${resource.type.toUpperCase()}: ${resource.url}`
+                    '[-] ' +
+                    withoutSRI[j].type.toUpperCase() +
+                    ': ' +
+                    withoutSRI[j].url
                 );
             }
 
-            console.log(`\nTotal without SRI: ${withoutSRI.length}\n`);
+            console.log('');
+            console.log('Total without SRI: ' + withoutSRI.length);
+            console.log('');
         }
 
-        // ==============================
+        // ========================================
         // SUMMARY
-        // ==============================
+        // ========================================
 
         console.log('========================================');
         console.log('                 SUMMARY');
         console.log('========================================');
-        console.log(`Total resources: ${resources.length}`);
-        console.log(`With SRI:        ${withSRI.length}`);
-        console.log(`Without SRI:     ${withoutSRI.length}`);
-        console.log('========================================\n');
+        console.log('Total resources: ' + resources.length);
+        console.log('With SRI:        ' + withSRI.length);
+        console.log('Without SRI:     ' + withoutSRI.length);
+        console.log('========================================');
+        console.log('');
 
     } catch (error) {
-        console.error(`Error: ${error.message}`);
+        console.error('Error: ' + error.message);
         process.exit(1);
     }
 }
 
 module.exports = {
-    checkSRI,
-    extractResources,
-    fetchUrl,
-    isExcludedDomain,
-    hasSRI
+    checkSRI: checkSRI,
+    extractResources: extractResources,
+    fetchUrl: fetchUrl,
+    isExcludedDomain: isExcludedDomain,
+    hasSRI: hasSRI,
+    resolveUrl: resolveUrl
 };
-```
