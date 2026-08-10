@@ -4,13 +4,13 @@
 
 ### Option 1: Global Install (Recommended)
 ```bash
-npm install -g sri-detector
+npm install -g checkSRI
 sricheck https://example.com
 ```
 
 ### Option 2: Local Install
 ```bash
-git clone https://github.com/yourusername/sri-detector.git
+git clone https://github.com/pwnedproof/checkSRI.git
 cd sri-detector
 npm install
 node cli.js https://example.com
