@@ -76,7 +76,26 @@ Use:
 ```bash
 node cli.js https://example.com
 ```
+# Show help
+sricheck --help
 
+# Basic scan
+sricheck https://example.com
+
+# With crawling
+sricheck https://example.com --crawl
+
+# Crawl 5 levels deep
+sricheck https://example.com -c -d 5
+
+# Filter domains
+sricheck https://example.com -f "tracking.js, analytics"
+
+# Authentication
+sricheck https://private.site.com --cookies "session=xyz"
+
+# Everything together
+sricheck https://example.com -c -d 3 -f "internal-*" --cookies "auth=token"
 ---
 
 # Example Output
