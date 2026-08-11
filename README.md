@@ -1,485 +1,432 @@
-# checkSRI
+# 🔐 checkSRI
 
-A simple command-line tool for checking whether external JavaScript and CSS resources on a website use **Subresource Integrity (SRI)**.
+**A fast CLI tool for detecting missing and invalid Subresource Integrity (SRI) on websites.**
 
-The tool scans the HTML of a website, identifies external JavaScript and stylesheet resources, and separates them into:
+checkSRI scans external JavaScript and CSS resources and verifies whether their `integrity` attributes correctly match the resources being loaded.
 
-* **WITH SRI** — the HTML resource contains an `integrity` attribute.
-* **NO SRI** — the HTML resource does not contain an `integrity` attribute.
-
-> Only scan websites you own or are authorized to test.
+```text
+ 
+```
 
 ---
 
-## Requirements
+## ✨ Features
 
-* Kali Linux
-* Git
-* Node.js
+* 🔎 Detect missing SRI attributes
+* ✅ Validate existing SRI hashes
+* ❌ Detect incorrect or outdated SRI hashes
+* 📜 Check JavaScript resources
+* 🎨 Check external CSS stylesheets
+* 🕷️ Crawl same-domain pages
+* 📊 Display scan statistics
+* 🚫 Exclude unwanted domains
+* 🍪 Support authenticated pages using cookies
+* ⚡ Simple command-line interface
+* 🐧 Works on Kali Linux and other Node.js environments
+
+---
+
+## 📦 Installation
+
+### Requirements
+
+* Node.js 14+
 * npm
+* Git
 
-Check whether they are installed:
-
-```bash
-git --version
-node --version
-npm --version
-```
-
----
-
-# Download / Install
-
-Clone the repository:
+### Clone
 
 ```bash
-cd ~
 git clone https://github.com/pwnedproof/checkSRI.git
+cd checkSRI/checksritool
 ```
 
-Enter the project:
-
-```bash
-cd ~/checkSRI/checksritool
-```
-
-Install the Node.js dependencies:
+### Install dependencies
 
 ```bash
 npm install
 ```
 
----
+### Install globally
 
-# Run the Tool
-
-From the `checksritool` directory:
-
-```bash
-node cli.js https://example.com
-```
-
-For example:
-
-```bash
-node cli.js https://www.example.com
-```
-
-Do **not** include Markdown formatting such as:
-
-```text
-[https://example.com](https://example.com)
-```
-
-Use:
-
-```bash
-node cli.js https://example.com
-```
-# Show help
-sricheck --help
-
-# Basic scan
-sricheck https://example.com
-
-# With crawling
-sricheck https://example.com --crawl
-
-# Crawl 5 levels deep
-sricheck https://example.com -c -d 5
-
-# Filter domains
-sricheck https://example.com -f "tracking.js, analytics"
-
-# Authentication
-sricheck https://private.site.com --cookies "session=xyz"
-
-# Everything together
-sricheck https://example.com -c -d 3 -f "internal-*" --cookies "auth=token"
----
-
-# Example Output
-
-The tool separates resources into two sections.
-
-```text
-========================================
-              WITH SRI
-========================================
-
-[+] SCRIPT: https://example.com/script.js
-[+] STYLESHEET: https://example.com/style.css
-
-Total with SRI: 2
-
-
-========================================
-               NO SRI
-========================================
-
-[-] SCRIPT: https://cdn.example.com/library.js
-[-] SCRIPT: https://cdn.example.com/app.js
-
-Total without SRI: 2
-
-
-========================================
-                 SUMMARY
-========================================
-Total resources: 4
-With SRI:        2
-Without SRI:     2
-========================================
-```
-
-### WITH SRI
-
-A resource is placed in this section when its HTML tag contains an `integrity` attribute.
-
-Example:
-
-```html
-<script
-    src="https://example.com/script.js"
-    integrity="sha384-example">
-</script>
-```
-
-### NO SRI
-
-A resource is placed in this section when its HTML tag does not contain an `integrity` attribute.
-
-Example:
-
-```html
-<script src="https://example.com/script.js"></script>
-```
-
----
-
-# Update the Tool
-
-If you originally downloaded the repository using `git clone`, update it with:
-
-```bash
-cd ~/checkSRI
-git pull
-```
-
-Then update Node.js dependencies:
-
-```bash
-cd ~/checkSRI/checksritool
-npm install
-```
-
-Run the updated version:
-
-```bash
-node cli.js https://example.com
-```
-
-## Check Your Current Version
-
-To see whether your local repository has changes:
-
-```bash
-cd ~/checkSRI
-git status
-```
-
-You can also check the latest commits:
-
-```bash
-git log --oneline -5
-```
-
----
-
-# If You Modified Files Locally
-
-If you have made your own changes to `index.js` or other files, `git pull` may refuse to update.
-
-Check:
-
-```bash
-cd ~/checkSRI
-git status
-```
-
-If you want to keep your local changes:
-
-```bash
-git stash
-git pull
-git stash pop
-```
-
-If you **do not** need your local changes and want your Kali copy to exactly match GitHub:
-
-```bash
-git reset --hard
-git pull
-```
-
-> `git reset --hard` deletes uncommitted local changes. Make sure you do not need them first.
-
----
-
-# Delete / Uninstall
-
-## Remove the cloned repository
-
-If you want to completely delete the downloaded tool:
-
-```bash
-rm -rf ~/checkSRI
-```
-
-This removes the entire repository from your Kali machine.
-
-You can confirm:
-
-```bash
-ls ~/checkSRI
-```
-
-You should get:
-
-```text
-No such file or directory
-```
-
----
-
-# If You Installed It Globally
-
-If you previously ran:
+Install the `sricheck` command:
 
 ```bash
 sudo npm install -g .
 ```
 
-you may also have installed the `sricheck` command globally.
-
-Remove the global package with:
+Verify:
 
 ```bash
-sudo npm uninstall -g checksritool
-```
-
-Then remove the repository:
-
-```bash
-rm -rf ~/checkSRI
-```
-
-If you are unsure of the global package name, check:
-
-```bash
-npm list -g --depth=0
+sricheck --help
 ```
 
 ---
 
-# Reinstall From Scratch
+# 🚀 Usage
 
-If something becomes corrupted, the easiest solution is to remove the old copy and clone it again:
-
-```bash
-rm -rf ~/checkSRI
-```
-
-Then:
+Basic scan:
 
 ```bash
-cd ~
-git clone https://github.com/pwnedproof/checkSRI.git
-cd ~/checkSRI/checksritool
-npm install
+sricheck https://example.com
 ```
 
-Run:
+Example:
+
+```bash
+sricheck https://www.example.com
+```
+
+---
+
+## 📖 Help
+
+```bash
+sricheck --help
+```
+
+Output:
+
+```text
+SRI Detector
+
+Usage:
+  sricheck <url>
+
+Options:
+  -h, --help              Show help
+  -c, --crawl             Crawl same-domain pages
+  -d, --depth <number>    Maximum crawl depth
+  -f, --filter <domains>  Comma-separated domains to exclude
+  --cookies <cookies>     Cookies to send with requests
+```
+
+---
+
+# 🔍 Scan a Website
+
+```bash
+sricheck https://example.com
+```
+
+checkSRI looks for external:
+
+```html
+<script src="https://cdn.example.com/app.js"></script>
+```
+
+and:
+
+```html
+<link rel="stylesheet" href="https://cdn.example.com/style.css">
+```
+
+resources.
+
+It then checks their SRI configuration.
+
+---
+
+# 🛡️ SRI Results
+
+### ✅ VALID
+
+The resource contains an SRI hash and the hash matches the downloaded resource.
+
+```text
+✅ VALID
+```
+
+### ❌ INVALID
+
+The resource contains an SRI hash, but the hash does not match the downloaded resource.
+
+```text
+❌ INVALID
+```
+
+This can happen when a resource has changed but its SRI hash was not updated.
+
+### ⚠️ MISSING
+
+The resource does not contain an `integrity` attribute.
+
+```text
+⚠️ MISSING
+```
+
+### 🚨 ERROR
+
+The resource could not be downloaded or validated.
+
+```text
+🚨 ERROR
+```
+
+---
+
+# 🕷️ Crawl a Website
+
+Scan the starting page and additional same-domain pages:
+
+```bash
+sricheck https://example.com --crawl
+```
+
+Short form:
+
+```bash
+sricheck https://example.com -c
+```
+
+---
+
+## Crawl Depth
+
+Set the maximum crawl depth:
+
+```bash
+sricheck https://example.com --crawl --depth 3
+```
+
+Short form:
+
+```bash
+sricheck https://example.com -c -d 3
+```
+
+Example:
+
+```text
+Depth 0
+└── Homepage
+
+Depth 1
+├── About
+├── Contact
+└── Services
+
+Depth 2
+├── Services/Web
+├── Services/Security
+└── Contact/Team
+```
+
+Higher depths may result in more pages being scanned.
+
+---
+
+# 🚫 Exclude Domains
+
+Exclude specific domains from the scan:
+
+```bash
+sricheck https://example.com --filter "analytics.example.com"
+```
+
+Multiple domains can be supplied:
+
+```bash
+sricheck https://example.com \
+  --filter "analytics.example.com,tracking.example.com"
+```
+
+---
+
+# 🍪 Authenticated Websites
+
+For websites requiring an authenticated session, cookies can be supplied:
+
+```bash
+sricheck https://example.com \
+  --cookies "session=YOUR_SESSION_COOKIE"
+```
+
+Multiple cookies:
+
+```bash
+sricheck https://example.com \
+  --cookies "session=abc123; user=john"
+```
+
+> ⚠️ Never commit real session cookies, authentication tokens, or credentials to GitHub.
+
+---
+
+# 📊 Example
+
+```text
+SRI Detector
+
+📥 Fetching https://example.com...
+
+╔════════════════════════════════════════╗
+║          RESULTS SUMMARY              ║
+╚════════════════════════════════════════╝
+
+✅ VALID (8)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✓ script       https://cdn.example.com/app.js
+   ✓ stylesheet   https://cdn.example.com/style.css
+
+❌ INVALID (1)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ✗ script       https://cdn.example.com/old.js
+
+⚠️ MISSING (3)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ! script       https://cdn.example.com/vendor.js
+
+🚨 ERROR (0)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+╔════════════════════════════════════════╗
+║              STATISTICS               ║
+╠════════════════════════════════════════╣
+║ Total Resources:                     12 ║
+║ Valid:                                8 ║
+║ Invalid:                              1 ║
+║ Missing:                              3 ║
+║ Errors:                               0 ║
+╚════════════════════════════════════════╝
+```
+
+---
+
+# 🔐 Why SRI?
+
+Subresource Integrity allows browsers to verify that externally hosted resources have not been unexpectedly modified.
+
+Example:
+
+```html
+<script
+  src="https://cdn.example.com/app.js"
+  integrity="sha384-..."
+  crossorigin="anonymous">
+</script>
+```
+
+If the downloaded resource does not match the declared hash, the browser can prevent the resource from being executed or applied.
+
+checkSRI helps identify resources that:
+
+* Have no SRI protection
+* Have an incorrect SRI hash
+* Have an outdated SRI hash
+* Need their integrity value updated
+
+---
+
+# 🧪 Development
+
+Run directly without global installation:
 
 ```bash
 node cli.js https://example.com
 ```
 
----
-
-# Project Structure
-
-The important files are:
-
-```text
-checkSRI/
-└── checksritool/
-    ├── cli.js
-    ├── index.js
-    ├── package.json
-    └── package-lock.json
-```
-
-### `cli.js`
-
-Command-line entry point.
-
-### `index.js`
-
-Contains the SRI scanning logic.
-
-It:
-
-1. Fetches the target webpage.
-2. Finds external JavaScript resources.
-3. Finds external CSS resources.
-4. Checks whether each resource has an `integrity` attribute.
-5. Separates resources into `WITH SRI` and `NO SRI`.
-
-### `package.json`
-
-Contains the Node.js project configuration and dependencies.
-
-### `package-lock.json`
-
-Locks dependency versions used by npm.
-
----
-
-# Troubleshooting
-
-## Check JavaScript syntax
-
-If Node reports a `SyntaxError`:
+Show help:
 
 ```bash
-cd ~/checkSRI/checksritool
+node cli.js --help
+```
+
+Run tests:
+
+```bash
+npm test
+```
+
+Check syntax:
+
+```bash
 node --check index.js
-```
-
-No output means the file passed the syntax check.
-
----
-
-## Check Node.js
-
-```bash
-node --version
-```
-
-If Node.js is missing:
-
-```bash
-sudo apt update
-sudo apt install -y nodejs npm
+node --check cli.js
 ```
 
 ---
 
-## Reinstall dependencies
+# 🔄 Update
 
-If you encounter dependency errors:
-
-```bash
-cd ~/checkSRI/checksritool
-rm -rf node_modules
-npm install
-```
-
-Then:
-
-```bash
-node cli.js https://example.com
-```
-
----
-
-# Important Notes
-
-The tool checks whether the page's HTML contains an `integrity` attribute.
-
-It does **not** currently verify that an existing SRI hash matches the downloaded resource.
-
-For example:
-
-```html
-<script src="script.js" integrity="sha384-..."></script>
-```
-
-is classified as:
-
-```text
-WITH SRI
-```
-
-while:
-
-```html
-<script src="script.js"></script>
-```
-
-is classified as:
-
-```text
-NO SRI
-```
-
-The tool also excludes several common domains such as social-media, analytics, Google, and font domains according to the exclusion list in `index.js`.
-
----
-
-# Quick Commands
-
-### Install
-
-```bash
-cd ~
-git clone https://github.com/pwnedproof/checkSRI.git
-cd ~/checkSRI/checksritool
-npm install
-```
-
-### Run
-
-```bash
-node cli.js https://example.com
-```
-
-### Update
+Update the repository:
 
 ```bash
 cd ~/checkSRI
 git pull
+```
+
+Update dependencies:
+
+```bash
 cd checksritool
 npm install
 ```
 
-### Syntax check
+Reinstall the global CLI:
 
 ```bash
-cd ~/checkSRI/checksritool
-node --check index.js
+sudo npm install -g .
 ```
 
-### Delete
+Verify:
 
 ```bash
-rm -rf ~/checkSRI
-```
-
-### Reinstall
-
-```bash
-rm -rf ~/checkSRI
-git clone https://github.com/pwnedproof/checkSRI.git
-cd ~/checkSRI/checksritool
-npm install
+sricheck --help
 ```
 
 ---
 
-## Legal / Responsible Use
+# 🗑️ Uninstall
 
-Use this tool only against websites and systems you own or have explicit permission to test.
+Remove the globally installed CLI:
 
-The tool is intended for SRI configuration auditing and educational/security testing.
+```bash
+sudo npm uninstall -g sri-detector
+```
+
+Remove the repository:
+
+```bash
+rm -rf ~/checkSRI
+```
+
+
+
+---
+
+# ⚖️ Responsible Use
+
+Only scan websites and systems that you own or have explicit permission to test.
+
+Do not use checkSRI to bypass authentication, access controls, or other security mechanisms.
+
+The author is not responsible for misuse of this tool.
+
+---
+
+# 📜 License
+
+MIT License.
+
+See [`LICENSE`](LICENSE) for details.
+
+---
+
+# ⭐ Support
+
+If you find checkSRI useful:
+
+* ⭐ Star the repository
+* 🐛 Report bugs
+* 💡 Suggest improvements
+* 🔧 Submit pull requests
+
+## GitHub
+
+https://github.com/pwnedproof/checkSRI
+
+---
+
+**checkSRI — Find missing SRI. Validate what exists. Secure your resources.**
+
