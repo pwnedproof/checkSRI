@@ -1,10 +1,11 @@
+
 {
   "name": "sri-detector",
   "version": "1.0.0",
-  "description": "Detect missing or invalid Subresource Integrity (SRI) hashes in HTML files",
+  "description": "Detect missing and invalid Subresource Integrity (SRI) hashes in web resources",
   "main": "index.js",
   "bin": {
-    "sri-detector": "cli.js"
+    "sricheck": "cli.js"
   },
   "scripts": {
     "test": "node test.js",
@@ -18,13 +19,13 @@
     "cdn",
     "integrity-check"
   ],
-  "author": "",
+  "author": "pwnedproof",
   "license": "MIT",
   "dependencies": {
-    "chalk": "^5.3.0"
+    "chalk": "^4.1.2"
   },
-  "devDependencies": {},
   "engines": {
     "node": ">=14.0.0"
   }
 }
+
