@@ -1,3 +1,4 @@
+
 #!/usr/bin/env node
 
 const { checkSRI } = require('./index.js');
@@ -5,55 +6,78 @@ const chalk = require('chalk');
 
 const args = process.argv.slice(2);
 
-if (args.length === 0) {
+function showHelp() {
   console.log(chalk.cyan(`
-  ╔════════════════════════════════════════════════════════════════╗
-  ║                   SRI DETECTOR - HELP                          ║
-  ╚════════════════════════════════════════════════════════════════╝
+╔════════════════════════════════════════════════════════════════╗
+║                       SRI CHECK                               ║
+╚════════════════════════════════════════════════════════════════╝
 
-  ${chalk.white('USAGE:')}
-    sricheck <url> [options]
+USAGE:
 
-  ${chalk.white('EXAMPLES:')}
-    # Basic scan
-    sricheck https://example.com
+  sricheck <url> [options]
 
-    # Scan with crawling
-    sricheck https://example.com --crawl
+EXAMPLES:
 
-    # Filter out specific domains
-    sricheck https://example.com --filter "cdn.example.com, custom.js"
+  sricheck https://example.com
 
-    # With cookie authentication
-    sricheck https://example.com --cookies "session=abc123; user=john"
+  sricheck https://example.com --crawl
 
-    # All features combined
-    sricheck https://example.com --crawl --depth 3 --filter "tracking.js" --cookies "session=xyz"
+  sricheck https://example.com --crawl --depth 3
 
-  ${chalk.white('OPTIONS:')}
-    ${chalk.cyan('-h, --help')}             Show this help menu
-    ${chalk.cyan('-c, --crawl')}            Crawl and check all pages on the domain
-    ${chalk.cyan('-d, --depth <number>')}   Max crawl depth (default: 2)
-    ${chalk.cyan('-f, --filter <domains>')} Exclude domains (comma-separated)
-    ${chalk.cyan('--cookies <string>')}     Authentication cookies for private sites
+  sricheck https://example.com --filter "analytics.com"
 
-  ${chalk.white('FEATURES:')}
-    ✅ Detect resources with/without SRI
-    ✅ Crawl entire websites
-    ✅ Filter specific domains
-    ✅ Cookie-based authentication
-    ✅ Beautiful colored output
-    ✅ Statistical summary
+  sricheck https://example.com --cookies "session=abc123"
 
-  ${chalk.white('NOTES:')}
-    • Resources from social media, analytics, and fonts are auto-excluded
-    • Crawling respects same-origin policy
-    • Cookies should be URL-encoded if they contain special characters
-  `));
+OPTIONS:
+
+  -h, --help
+      Show this help menu
+
+  -c, --crawl
+      Crawl same-domain pages
+
+  -d, --depth <number>
+      Maximum crawl depth
+      Default: 2
+
+  -f, --filter <domains>
+      Exclude domains
+      Comma-separated list
+
+  --cookies <string>
+      Cookies for authenticated websites
+
+RESULTS:
+
+  ✅ VALID
+      Integrity attribute exists and the
+      calculated hash matches the resource.
+
+  ❌ INVALID
+      Integrity attribute exists but the
+      calculated hash does not match.
+
+  ⚠️  MISSING
+      Resource does not contain an integrity attribute.
+
+  🚨 ERROR
+      Resource could not be downloaded or checked.
+`));
+}
+
+if (
+  args.includes('-h') ||
+  args.includes('--help')
+) {
+  showHelp();
   process.exit(0);
 }
 
-// Parse arguments
+if (args.length === 0) {
+  showHelp();
+  process.exit(1);
+}
+
 let url = null;
 let crawl = false;
 let maxDepth = 2;
@@ -63,38 +87,132 @@ let cookies = null;
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
 
-  if (arg === '-h' || arg === '--help') {
-    process.argv.splice(2, args.length);
-    process.argv.push();
-    require('./cli.js');
-  } else if (arg === '-c' || arg === '--crawl') {
+  if (arg === '-c' || arg === '--crawl') {
     crawl = true;
-  } else if (arg === '-d' || arg === '--depth') {
-    maxDepth = parseInt(args[++i], 10) || 2;
-  } else if (arg === '-f' || arg === '--filter') {
+    continue;
+  }
+
+  if (arg === '-d' || arg === '--depth') {
+    const value = args[++i];
+
+    if (!value) {
+      console.error(
+        chalk.red('❌ --depth requires a number')
+      );
+      process.exit(1);
+    }
+
+    maxDepth = parseInt(value, 10);
+
+    if (
+      Number.isNaN(maxDepth) ||
+      maxDepth < 0
+    ) {
+      console.error(
+        chalk.red(
+          '❌ Depth must be a non-negative number'
+        )
+      );
+      process.exit(1);
+    }
+
+    continue;
+  }
+
+  if (arg === '-f' || arg === '--filter') {
     filter = args[++i];
-  } else if (arg === '--cookies' || arg === '--auth') {
+
+    if (!filter) {
+      console.error(
+        chalk.red(
+          '❌ --filter requires domains'
+        )
+      );
+      process.exit(1);
+    }
+
+    continue;
+  }
+
+  if (
+    arg === '--cookies' ||
+    arg === '--auth'
+  ) {
     cookies = args[++i];
-  } else if (!arg.startsWith('-') && !url) {
+
+    if (!cookies) {
+      console.error(
+        chalk.red(
+          '❌ --cookies requires a value'
+        )
+      );
+      process.exit(1);
+    }
+
+    continue;
+  }
+
+  if (!arg.startsWith('-') && !url) {
     url = arg;
+    continue;
+  }
+
+  if (arg.startsWith('-')) {
+    console.error(
+      chalk.red(
+        `❌ Unknown option: ${arg}`
+      )
+    );
+
+    console.error(
+      chalk.yellow(
+        'Run "sricheck --help" for usage.'
+      )
+    );
+
+    process.exit(1);
   }
 }
 
 if (!url) {
-  console.error(chalk.red('❌ URL is required'));
-  console.error(chalk.yellow('Run "sricheck --help" for usage information'));
+  console.error(
+    chalk.red('❌ URL is required')
+  );
+
+  console.error(
+    chalk.yellow(
+      'Run "sricheck --help" for usage.'
+    )
+  );
+
   process.exit(1);
 }
 
-if (!url.startsWith('http://') && !url.startsWith('https://')) {
-  console.error(chalk.red('❌ URL must start with http:// or https://'));
+if (
+  !url.startsWith('http://') &&
+  !url.startsWith('https://')
+) {
+  console.error(
+    chalk.red(
+      '❌ URL must start with http:// or https://'
+    )
+  );
+
   process.exit(1);
 }
 
-// Run the check
 checkSRI(url, {
   crawl,
   maxDepth,
   filter,
   cookies
+}).catch((error) => {
+  console.error(
+    chalk.red(
+      `❌ ${error.message}`
+    )
+  );
+
+  process.exit(1);
 });
+
