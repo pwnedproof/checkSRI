@@ -430,5 +430,5 @@ https://github.com/pwnedproof/checkSRI
 
 ---
 
-**checkSRI — Find missing SRI. Validate what exists. Secure your resources.**
+**checkSRI : Find missing SRI. Validate what exists. Secure your resources.**
 
