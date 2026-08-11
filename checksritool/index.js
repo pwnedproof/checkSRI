@@ -1,4 +1,3 @@
-
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
@@ -27,7 +26,7 @@ const EXCLUDED_DOMAINS = [
  */
 function printTitle() {
   console.log(chalk.cyan(`
-  ███████╗██████╗ ██╗    ██████╗ ███████╗████████╗███████╗ ██████╗████████╗ ██████╗ ██████╗ 
+  ███████╗██████╗ ██╗    ██████╗ ███████╗████████╗███████╗ ██████╗████████╗ ██████╗ ██████╗
   ██╔════╝██╔══██╗██║    ██╔══██╗██╔════╝╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗
   ███████╗██████╔╝██║    ██║  ██║█████╗     ██║   █████╗  ██║        ██║   ██║   ██║██████╔╝
   ╚════██║██╔══██╗██║    ██║  ██║██╔══╝     ██║   ██╔══╝  ██║        ██║   ██║   ██║██╔══██╗
@@ -37,14 +36,23 @@ function printTitle() {
 }
 
 /**
- * Fetch URL and return raw Buffer.
+ * Fetch URL and return the exact response bytes.
  *
- * Buffers are important because SRI hashes are calculated
- * against the exact bytes of the resource.
+ * SRI hashes must be calculated against the exact bytes
+ * downloaded from the resource.
  */
 async function fetchUrl(urlString, cookies = null) {
   return new Promise((resolve, reject) => {
-    const protocol = urlString.startsWith('https://') ? https : http;
+    let protocol;
+
+    try {
+      protocol = new URL(urlString).protocol === 'https:'
+        ? https
+        : http;
+    } catch {
+      reject(new Error(`Invalid URL: ${urlString}`));
+      return;
+    }
 
     const options = {
       timeout: 10000,
@@ -79,10 +87,7 @@ async function fetchUrl(urlString, cookies = null) {
         return;
       }
 
-      if (
-        res.statusCode < 200 ||
-        res.statusCode >= 300
-      ) {
+      if (res.statusCode < 200 || res.statusCode >= 300) {
         res.resume();
 
         reject(
@@ -118,10 +123,10 @@ async function fetchUrl(urlString, cookies = null) {
 /**
  * Calculate an SRI hash.
  *
- * SRI format:
- * sha256-BASE64_HASH
- * sha384-BASE64_HASH
- * sha512-BASE64_HASH
+ * Supported:
+ *   sha256
+ *   sha384
+ *   sha512
  */
 function calculateSRI(content, algorithm = 'sha384') {
   const supportedAlgorithms = [
@@ -137,12 +142,9 @@ function calculateSRI(content, algorithm = 'sha384') {
   }
 
   const hash = crypto.createHash(algorithm);
-
   hash.update(content);
 
-  const digest = hash.digest('base64');
-
-  return `${algorithm}-${digest}`;
+  return `${algorithm}-${hash.digest('base64')}`;
 }
 
 /**
@@ -151,14 +153,6 @@ function calculateSRI(content, algorithm = 'sha384') {
  * Example:
  *
  * sha256-ABC sha384-DEF sha512-GHI
- *
- * becomes:
- *
- * [
- *   { algorithm: 'sha256', hash: 'ABC' },
- *   { algorithm: 'sha384', hash: 'DEF' },
- *   { algorithm: 'sha512', hash: 'GHI' }
- * ]
  */
 function parseIntegrity(integrity) {
   if (!integrity || typeof integrity !== 'string') {
@@ -182,9 +176,7 @@ function parseIntegrity(integrity) {
       const hash = entry.slice(separator + 1);
 
       if (
-        !['sha256', 'sha384', 'sha512'].includes(
-          algorithm
-        )
+        !['sha256', 'sha384', 'sha512'].includes(algorithm)
       ) {
         return null;
       }
@@ -202,7 +194,7 @@ function parseIntegrity(integrity) {
 }
 
 /**
- * Get the integrity attribute from an HTML tag.
+ * Extract the integrity attribute from an HTML tag.
  */
 function getIntegrityAttribute(tag) {
   if (!tag) {
@@ -217,7 +209,7 @@ function getIntegrityAttribute(tag) {
 }
 
 /**
- * Check whether an HTML tag contains an integrity attribute.
+ * Check whether a tag contains an integrity attribute.
  */
 function hasSRI(tag) {
   return getIntegrityAttribute(tag) !== null;
@@ -225,14 +217,6 @@ function hasSRI(tag) {
 
 /**
  * Verify a downloaded resource against its SRI attribute.
- *
- * Returns:
- *
- * {
- *   valid: true/false,
- *   matchingHash: 'sha384-...',
- *   calculatedHashes: {...}
- * }
  */
 function verifySRI(content, integrity) {
   const hashes = parseIntegrity(integrity);
@@ -255,11 +239,9 @@ function verifySRI(content, integrity) {
 
     calculatedHashes[item.algorithm] = calculated;
 
-    // Use timingSafeEqual when possible.
-    const expectedBuffer = Buffer.from(
-      `${item.algorithm}-${item.hash}`
-    );
+    const expected = `${item.algorithm}-${item.hash}`;
 
+    const expectedBuffer = Buffer.from(expected);
     const actualBuffer = Buffer.from(calculated);
 
     if (
@@ -285,39 +267,41 @@ function verifySRI(content, integrity) {
 }
 
 /**
- * Check if domain should be excluded.
+ * Check whether a domain should be excluded.
  */
 function isExcludedDomain(
   urlString,
   customExclusions = new Set()
 ) {
   try {
-    const urlObj = new URL(urlString);
+    const hostname = new URL(urlString)
+      .hostname
+      .toLowerCase();
 
-    const hostname =
-      urlObj.hostname.toLowerCase();
-
-    // Exact custom exclusions
-    if (customExclusions.has(hostname)) {
-      return true;
+    // Custom exclusions
+    for (const excluded of customExclusions) {
+      if (
+        hostname === excluded ||
+        hostname.endsWith(`.${excluded}`)
+      ) {
+        return true;
+      }
     }
 
     // Default exclusions
-    return EXCLUDED_DOMAINS.some(
-      (excluded) => {
-        return (
-          hostname === excluded ||
-          hostname.endsWith(`.${excluded}`)
-        );
-      }
-    );
+    return EXCLUDED_DOMAINS.some((excluded) => {
+      return (
+        hostname === excluded ||
+        hostname.endsWith(`.${excluded}`)
+      );
+    });
   } catch {
     return false;
   }
 }
 
 /**
- * Resolve a resource URL relative to the page URL.
+ * Resolve a relative URL against a base URL.
  */
 function resolveUrl(baseUrl, relativeUrl) {
   try {
@@ -331,12 +315,47 @@ function resolveUrl(baseUrl, relativeUrl) {
 }
 
 /**
- * Extract external resources from HTML.
+ * Determine whether a resource is hosted externally.
  *
- * Supports:
+ * Example:
  *
- * <script src="...">
- * <link rel="stylesheet" href="...">
+ * Page:
+ *   https://example.com
+ *
+ * Internal:
+ *   https://example.com/app.js
+ *
+ * External:
+ *   https://cdn.example.net/app.js
+ *
+ * Subdomains are considered external because they have
+ * a different hostname:
+ *
+ *   example.com
+ *   cdn.example.com
+ */
+function isExternalResource(resourceUrl, pageUrl) {
+  try {
+    const resourceHostname = new URL(resourceUrl)
+      .hostname
+      .toLowerCase();
+
+    const pageHostname = new URL(pageUrl)
+      .hostname
+      .toLowerCase();
+
+    return resourceHostname !== pageHostname;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Extract external JavaScript and CSS resources.
+ *
+ * IMPORTANT:
+ * Only resources hosted on a different hostname from
+ * the page being scanned are returned.
  */
 function extractResources(
   html,
@@ -345,7 +364,72 @@ function extractResources(
 ) {
   const resources = [];
 
-  // SCRIPT TAGS
+  if (!html) {
+    return resources;
+  }
+
+  if (!baseUrl) {
+    return resources;
+  }
+
+  /**
+   * Add a resource if it is external and not excluded.
+   */
+  function addResource(
+    type,
+    originalUrl,
+    tag
+  ) {
+    if (!originalUrl) {
+      return;
+    }
+
+    const absoluteUrl = resolveUrl(
+      baseUrl,
+      originalUrl
+    );
+
+    if (!absoluteUrl) {
+      return;
+    }
+
+    // Ignore same-host resources
+    if (
+      !isExternalResource(
+        absoluteUrl,
+        baseUrl
+      )
+    ) {
+      return;
+    }
+
+    // Ignore excluded domains
+    if (
+      isExcludedDomain(
+        absoluteUrl,
+        customExclusions
+      )
+    ) {
+      return;
+    }
+
+    const integrity =
+      getIntegrityAttribute(tag);
+
+    resources.push({
+      type,
+      url: absoluteUrl,
+      originalUrl,
+      tag,
+      integrity,
+      hasSRI: integrity !== null,
+      status: integrity !== null
+        ? 'pending'
+        : 'missing'
+    });
+  }
+
+  // External JavaScript
   const scriptRegex =
     /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
 
@@ -354,74 +438,32 @@ function extractResources(
   while (
     (match = scriptRegex.exec(html)) !== null
   ) {
-    const originalUrl = match[1];
-
-    const absoluteUrl = baseUrl
-      ? resolveUrl(baseUrl, originalUrl)
-      : originalUrl;
-
-    if (
-      absoluteUrl &&
-      !isExcludedDomain(
-        absoluteUrl,
-        customExclusions
-      )
-    ) {
-      resources.push({
-        type: 'script',
-        url: absoluteUrl,
-        originalUrl,
-        tag: match[0],
-        integrity:
-          getIntegrityAttribute(match[0]),
-        hasSRI: hasSRI(match[0]),
-        status: hasSRI(match[0])
-          ? 'pending'
-          : 'missing'
-      });
-    }
+    addResource(
+      'script',
+      match[1],
+      match[0]
+    );
   }
 
-  // STYLESHEET TAGS
+  // External stylesheets
   const linkRegex =
     /<link\b[^>]*\brel\s*=\s*["']stylesheet["'][^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi;
 
   while (
     (match = linkRegex.exec(html)) !== null
   ) {
-    const originalUrl = match[1];
-
-    const absoluteUrl = baseUrl
-      ? resolveUrl(baseUrl, originalUrl)
-      : originalUrl;
-
-    if (
-      absoluteUrl &&
-      !isExcludedDomain(
-        absoluteUrl,
-        customExclusions
-      )
-    ) {
-      resources.push({
-        type: 'stylesheet',
-        url: absoluteUrl,
-        originalUrl,
-        tag: match[0],
-        integrity:
-          getIntegrityAttribute(match[0]),
-        hasSRI: hasSRI(match[0]),
-        status: hasSRI(match[0])
-          ? 'pending'
-          : 'missing'
-      });
-    }
+    addResource(
+      'stylesheet',
+      match[1],
+      match[0]
+    );
   }
 
   return resources;
 }
 
 /**
- * Extract all same-domain links from HTML.
+ * Extract same-host links for crawling.
  */
 function extractLinks(html, baseUrl) {
   const links = new Set();
@@ -450,15 +492,18 @@ function extractLinks(html, baseUrl) {
       const absoluteUrl =
         resolveUrl(baseUrl, link);
 
-      const absoluteUrlObj =
-        new URL(absoluteUrl);
+      const absolute = new URL(
+        absoluteUrl
+      );
 
-      const baseUrlObj =
-        new URL(baseUrl);
+      const base = new URL(
+        baseUrl
+      );
 
+      // Crawl only the exact same hostname
       if (
-        absoluteUrlObj.hostname.toLowerCase() ===
-        baseUrlObj.hostname.toLowerCase()
+        absolute.hostname.toLowerCase() ===
+        base.hostname.toLowerCase()
       ) {
         links.add(absoluteUrl);
       }
@@ -471,12 +516,13 @@ function extractLinks(html, baseUrl) {
 }
 
 /**
- * Download and verify a single resource.
+ * Download and verify one external resource.
  */
 async function checkResourceSRI(
   resource,
   cookies = null
 ) {
+  // No integrity attribute
   if (!resource.hasSRI) {
     return {
       ...resource,
@@ -536,7 +582,20 @@ async function checkSRI(
     cookies = null
   } = options;
 
-  // Parse custom exclusions
+  // Validate starting URL
+  let startingUrl;
+
+  try {
+    startingUrl = new URL(
+      urlString
+    ).toString();
+  } catch {
+    throw new Error(
+      `Invalid URL: ${urlString}`
+    );
+  }
+
+  // Custom exclusions
   const customExclusions = new Set();
 
   if (filter) {
@@ -555,12 +614,11 @@ async function checkSRI(
     printTitle();
 
     const visitedUrls = new Set();
-
     const allResources = [];
 
     const urlQueue = [
       {
-        url: urlString,
+        url: startingUrl,
         depth: 0
       }
     ];
@@ -600,6 +658,12 @@ async function checkSRI(
         const html =
           htmlBuffer.toString('utf8');
 
+        /*
+         * IMPORTANT:
+         *
+         * Pass the current page URL to extractResources().
+         * This allows it to remove same-host resources.
+         */
         const resources =
           extractResources(
             html,
@@ -607,8 +671,6 @@ async function checkSRI(
             url
           );
 
-        // Actually download and verify
-        // every external resource.
         for (const resource of resources) {
           console.log(
             chalk.gray(
@@ -628,7 +690,7 @@ async function checkSRI(
           });
         }
 
-        // Crawl same-domain pages
+        // Crawl same-host pages
         if (
           crawl &&
           depth < maxDepth
@@ -662,25 +724,32 @@ async function checkSRI(
     // Organize results
     const valid =
       allResources.filter(
-        (r) => r.status === 'valid'
+        (resource) =>
+          resource.status === 'valid'
       );
 
     const invalid =
       allResources.filter(
-        (r) => r.status === 'invalid'
+        (resource) =>
+          resource.status === 'invalid'
       );
 
     const missing =
       allResources.filter(
-        (r) => r.status === 'missing'
+        (resource) =>
+          resource.status === 'missing'
       );
 
     const errors =
       allResources.filter(
-        (r) => r.status === 'error'
+        (resource) =>
+          resource.status === 'error'
       );
 
-    // RESULTS
+    // ========================================
+    // RESULTS SUMMARY
+    // ========================================
+
     console.log(
       chalk.cyan(
         '\n\n╔════════════════════════════════════════╗'
@@ -707,7 +776,9 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.gray('━'.repeat(50))
+      chalk.gray(
+        '━'.repeat(50)
+      )
     );
 
     if (valid.length === 0) {
@@ -750,7 +821,9 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.gray('━'.repeat(50))
+      chalk.gray(
+        '━'.repeat(50)
+      )
     );
 
     if (invalid.length === 0) {
@@ -814,13 +887,15 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.gray('━'.repeat(50))
+      chalk.gray(
+        '━'.repeat(50)
+      )
     );
 
     if (missing.length === 0) {
       console.log(
         chalk.green(
-          '   All checked resources have SRI.'
+          '   All external resources have SRI.'
         )
       );
     } else {
@@ -857,7 +932,9 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.gray('━'.repeat(50))
+      chalk.gray(
+        '━'.repeat(50)
+      )
     );
 
     if (errors.length === 0) {
@@ -879,16 +956,30 @@ async function checkSRI(
             ' ' +
             chalk.white(
               resource.url
-            ) +
-            '\n      ' +
+            )
+          );
+
+          console.log(
+            '      ' +
             chalk.red(
               resource.error
             )
           );
         });
+
+      if (errors.length > 20) {
+        console.log(
+          chalk.gray(
+            `   ... and ${errors.length - 20} more`
+          )
+        );
+      }
     }
 
+    // ========================================
     // STATISTICS
+    // ========================================
+
     console.log(
       chalk.cyan(
         '\n╔════════════════════════════════════════╗'
@@ -908,7 +999,9 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white('║ Total Resources:    ') +
+      chalk.white(
+        '║ Total External:    '
+      ) +
       chalk.yellow(
         String(
           allResources.length
@@ -918,7 +1011,9 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white('║ Valid SRI:          ') +
+      chalk.white(
+        '║ Valid SRI:         '
+      ) +
       chalk.green(
         String(
           valid.length
@@ -928,7 +1023,9 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white('║ Invalid SRI:        ') +
+      chalk.white(
+        '║ Invalid SRI:       '
+      ) +
       chalk.red(
         String(
           invalid.length
@@ -938,7 +1035,9 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white('║ Missing SRI:        ') +
+      chalk.white(
+        '║ Missing SRI:       '
+      ) +
       chalk.yellow(
         String(
           missing.length
@@ -948,7 +1047,9 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white('║ Errors:             ') +
+      chalk.white(
+        '║ Errors:            '
+      ) +
       chalk.magenta(
         String(
           errors.length
@@ -966,15 +1067,18 @@ async function checkSRI(
           )
         : 0;
 
+    const coverageColor =
+      percentage >= 80
+        ? chalk.green
+        : percentage >= 50
+          ? chalk.yellow
+          : chalk.red;
+
     console.log(
-      chalk.white('║ Valid Coverage:     ') +
-      (
-        percentage >= 80
-          ? chalk.green
-          : percentage >= 50
-            ? chalk.yellow
-            : chalk.red
-      )(
+      chalk.white(
+        '║ Valid Coverage:    '
+      ) +
+      coverageColor(
         `${percentage}%`.padStart(17)
       ) +
       chalk.white(' ║')
@@ -987,9 +1091,7 @@ async function checkSRI(
     );
 
     // Recommendations
-    if (
-      invalid.length > 0
-    ) {
+    if (invalid.length > 0) {
       console.log(
         chalk.red(
           '\n🚨 Action required: invalid SRI hashes were found.'
@@ -1003,12 +1105,10 @@ async function checkSRI(
       );
     }
 
-    if (
-      missing.length > 0
-    ) {
+    if (missing.length > 0) {
       console.log(
         chalk.yellow(
-          '\n💡 Tip: Resources without SRI should be reviewed and given an appropriate integrity hash.'
+          '\n💡 Tip: External resources without SRI should be reviewed and protected with an appropriate integrity hash.'
         )
       );
     }
@@ -1046,8 +1146,7 @@ module.exports = {
   isExcludedDomain,
   hasSRI,
   resolveUrl,
+  isExternalResource,
   printTitle
 };
-
-
 
