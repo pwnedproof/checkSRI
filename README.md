@@ -1,4 +1,4 @@
-# 🔐 checkSRI
+#  checkSRI
 
 **A fast CLI tool for detecting missing and invalid Subresource Integrity (SRI) on websites.**
 
@@ -15,23 +15,23 @@ checkSRI scans external JavaScript and CSS resources and verifies whether their 
 
 ---
 
-## ✨ Features
+## Features
 
-* 🔎 Detect missing SRI attributes
+*  Detect missing SRI attributes
 * ✅ Validate existing SRI hashes
 * ❌ Detect incorrect or outdated SRI hashes
-* 📜 Check JavaScript resources
-* 🎨 Check external CSS stylesheets
-* 🕷️ Crawl same-domain pages
-* 📊 Display scan statistics
-* 🚫 Exclude unwanted domains
-* 🍪 Support authenticated pages using cookies
-* ⚡ Simple command-line interface
-* 🐧 Works on Kali Linux and other Node.js environments
+*  Check JavaScript resources
+* Check external CSS stylesheets
+*  Crawl same-domain pages
+*  Display scan statistics
+*  Exclude unwanted domains
+*  Support authenticated pages using cookies
+*  Simple command-line interface
+*  Works on Kali Linux and other Node.js environments
 
 ---
 
-## 📦 Installation
+##  Installation
 
 ### Requirements
 
@@ -68,7 +68,7 @@ sricheck --help
 
 ---
 
-# 🚀 Usage
+#  Usage
 
 Basic scan:
 
@@ -84,7 +84,7 @@ sricheck https://www.example.com
 
 ---
 
-## 📖 Help
+##  Help
 
 ```bash
 sricheck --help
@@ -108,7 +108,7 @@ Options:
 
 ---
 
-# 🔍 Scan a Website
+#  Scan a Website
 
 ```bash
 sricheck https://example.com
@@ -132,7 +132,7 @@ It then checks their SRI configuration.
 
 ---
 
-# 🛡️ SRI Results
+#  SRI Results
 
 ### ✅ VALID
 
@@ -170,7 +170,7 @@ The resource could not be downloaded or validated.
 
 ---
 
-# 🕷️ Crawl a Website
+#  Crawl a Website
 
 Scan the starting page and additional same-domain pages:
 
@@ -221,7 +221,7 @@ Higher depths may result in more pages being scanned.
 
 ---
 
-# 🚫 Exclude Domains
+#  Exclude Domains
 
 Exclude specific domains from the scan:
 
@@ -238,7 +238,7 @@ sricheck https://example.com \
 
 ---
 
-# 🍪 Authenticated Websites
+#  Authenticated Websites
 
 For websites requiring an authenticated session, cookies can be supplied:
 
@@ -254,11 +254,10 @@ sricheck https://example.com \
   --cookies "session=abc123; user=john"
 ```
 
-> ⚠️ Never commit real session cookies, authentication tokens, or credentials to GitHub.
 
 ---
 
-# 📊 Example
+#  Example
 
 ```text
 SRI Detector
@@ -298,7 +297,7 @@ SRI Detector
 
 ---
 
-# 🔐 Why SRI?
+#  Why SRI?
 
 Subresource Integrity allows browsers to verify that externally hosted resources have not been unexpectedly modified.
 
@@ -323,7 +322,7 @@ checkSRI helps identify resources that:
 
 ---
 
-# 🧪 Development
+#  Development
 
 Run directly without global installation:
 
@@ -352,7 +351,7 @@ node --check cli.js
 
 ---
 
-# 🔄 Update
+#  Update
 
 Update the repository:
 
@@ -382,7 +381,7 @@ sricheck --help
 
 ---
 
-# 🗑️ Uninstall
+#  Uninstall
 
 Remove the globally installed CLI:
 
@@ -400,7 +399,7 @@ rm -rf ~/checkSRI
 
 ---
 
-# ⚖️ Responsible Use
+#  Responsible Use
 
 Only scan websites and systems that you own or have explicit permission to test.
 
@@ -410,7 +409,7 @@ The author is not responsible for misuse of this tool.
 
 ---
 
-# 📜 License
+#  License
 
 MIT License.
 
