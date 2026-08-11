@@ -1,9 +1,10 @@
+
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
 const chalk = require('chalk');
 
-// Domains to exclude
+// Domains to exclude by default
 const EXCLUDED_DOMAINS = [
   'facebook.com',
   'twitter.com',
@@ -36,93 +37,78 @@ function printTitle() {
 }
 
 /**
- * Fetch URL and return raw bytes.
+ * Fetch URL and return raw Buffer.
  *
- * SRI must be calculated from the exact bytes of the resource.
+ * Buffers are important because SRI hashes are calculated
+ * against the exact bytes of the resource.
  */
-async function fetchUrl(urlString, cookies = null, redirectCount = 0) {
+async function fetchUrl(urlString, cookies = null) {
   return new Promise((resolve, reject) => {
-    if (redirectCount > 5) {
-      return reject(new Error('Too many redirects'));
-    }
+    const protocol = urlString.startsWith('https://') ? https : http;
 
-    let urlObj;
-
-    try {
-      urlObj = new URL(urlString);
-    } catch {
-      return reject(new Error(`Invalid URL: ${urlString}`));
-    }
-
-    const protocol = urlObj.protocol === 'https:' ? https : http;
-
-    const headers = {
-      'User-Agent': 'SRI-Detector/1.0',
-      'Accept': '*/*'
+    const options = {
+      timeout: 10000,
+      headers: {
+        'User-Agent': 'SRI-Detector/1.0',
+        'Accept': '*/*'
+      }
     };
 
     if (cookies) {
-      headers.Cookie = cookies;
+      options.headers.Cookie = cookies;
     }
 
-    const request = protocol.get(
-      urlObj,
-      {
-        headers,
-        timeout: 10000
-      },
-      (res) => {
-        // Follow redirects
-        if (
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          res.headers.location
-        ) {
-          const redirectUrl = new URL(
-            res.headers.location,
-            urlString
-          ).toString();
+    const request = protocol.get(urlString, options, (res) => {
+      // Follow redirects
+      if (
+        res.statusCode >= 300 &&
+        res.statusCode < 400 &&
+        res.headers.location
+      ) {
+        const redirectUrl = new URL(
+          res.headers.location,
+          urlString
+        ).toString();
 
-          res.resume();
+        res.resume();
 
-          return fetchUrl(
-            redirectUrl,
-            cookies,
-            redirectCount + 1
-          )
-            .then(resolve)
-            .catch(reject);
-        }
+        fetchUrl(redirectUrl, cookies)
+          .then(resolve)
+          .catch(reject);
 
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          res.resume();
-
-          return reject(
-            new Error(
-              `HTTP ${res.statusCode} while fetching ${urlString}`
-            )
-          );
-        }
-
-        const chunks = [];
-
-        res.on('data', (chunk) => {
-          chunks.push(chunk);
-        });
-
-        res.on('end', () => {
-          resolve({
-            data: Buffer.concat(chunks),
-            url: urlString,
-            statusCode: res.statusCode,
-            headers: res.headers
-          });
-        });
+        return;
       }
-    );
 
-    request.on('timeout', () => {
-      request.destroy(new Error('Request timeout'));
+      if (
+        res.statusCode < 200 ||
+        res.statusCode >= 300
+      ) {
+        res.resume();
+
+        reject(
+          new Error(
+            `HTTP ${res.statusCode} while fetching ${urlString}`
+          )
+        );
+
+        return;
+      }
+
+      const chunks = [];
+
+      res.on('data', (chunk) => {
+        chunks.push(chunk);
+      });
+
+      res.on('end', () => {
+        resolve(Buffer.concat(chunks));
+      });
+    });
+
+    request.setTimeout(10000, () => {
+      request.destroy(
+        new Error(`Request timed out: ${urlString}`)
+      );
     });
 
     request.on('error', reject);
@@ -132,10 +118,10 @@ async function fetchUrl(urlString, cookies = null, redirectCount = 0) {
 /**
  * Calculate an SRI hash.
  *
- * Supported algorithms:
- * sha256
- * sha384
- * sha512
+ * SRI format:
+ * sha256-BASE64_HASH
+ * sha384-BASE64_HASH
+ * sha512-BASE64_HASH
  */
 function calculateSRI(content, algorithm = 'sha384') {
   const supportedAlgorithms = [
@@ -154,103 +140,75 @@ function calculateSRI(content, algorithm = 'sha384') {
 
   hash.update(content);
 
-  return `${algorithm}-${hash.digest('base64')}`;
+  const digest = hash.digest('base64');
+
+  return `${algorithm}-${digest}`;
 }
 
 /**
- * Extract valid hashes from an integrity attribute.
+ * Parse an integrity attribute.
  *
  * Example:
  *
- * sha384-ABC... sha512-XYZ...
+ * sha256-ABC sha384-DEF sha512-GHI
+ *
+ * becomes:
+ *
+ * [
+ *   { algorithm: 'sha256', hash: 'ABC' },
+ *   { algorithm: 'sha384', hash: 'DEF' },
+ *   { algorithm: 'sha512', hash: 'GHI' }
+ * ]
  */
 function parseIntegrity(integrity) {
-  if (!integrity) {
+  if (!integrity || typeof integrity !== 'string') {
     return [];
   }
 
   return integrity
     .trim()
     .split(/\s+/)
-    .filter(Boolean)
-    .filter((value) => {
-      return /^(sha256|sha384|sha512)-[A-Za-z0-9+/]+={0,2}$/.test(
-        value
-      );
-    });
-}
+    .map((entry) => {
+      const separator = entry.indexOf('-');
 
-/**
- * Verify SRI against the actual resource.
- *
- * If any declared hash matches the actual resource,
- * the SRI is considered valid.
- */
-function verifySRI(content, integrity) {
-  const declaredHashes = parseIntegrity(integrity);
+      if (separator === -1) {
+        return null;
+      }
 
-  if (declaredHashes.length === 0) {
-    return {
-      valid: false,
-      calculated: [],
-      matchingHash: null
-    };
-  }
+      const algorithm = entry
+        .slice(0, separator)
+        .toLowerCase();
 
-  const algorithms = [
-    ...new Set(
-      declaredHashes.map(
-        (hash) => hash.split('-')[0]
-      )
-    )
-  ];
+      const hash = entry.slice(separator + 1);
 
-  const calculated = algorithms.map(
-    (algorithm) =>
-      calculateSRI(content, algorithm)
-  );
+      if (
+        !['sha256', 'sha384', 'sha512'].includes(
+          algorithm
+        )
+      ) {
+        return null;
+      }
 
-  const matchingHash = declaredHashes.find(
-    (hash) => calculated.includes(hash)
-  );
+      if (!hash) {
+        return null;
+      }
 
-  return {
-    valid: Boolean(matchingHash),
-    calculated,
-    matchingHash: matchingHash || null
-  };
-}
-
-/**
- * Check if a domain should be excluded.
- */
-function isExcludedDomain(
-  urlString,
-  customExclusions = new Set()
-) {
-  try {
-    const urlObj = new URL(urlString);
-    const hostname =
-      urlObj.hostname.toLowerCase();
-
-    if (customExclusions.has(hostname)) {
-      return true;
-    }
-
-    return EXCLUDED_DOMAINS.some(
-      (excluded) =>
-        hostname === excluded ||
-        hostname.endsWith(`.${excluded}`)
-    );
-  } catch {
-    return false;
-  }
+      return {
+        algorithm,
+        hash
+      };
+    })
+    .filter(Boolean);
 }
 
 /**
  * Get the integrity attribute from an HTML tag.
  */
 function getIntegrityAttribute(tag) {
+  if (!tag) {
+    return null;
+  }
+
   const match = tag.match(
     /\bintegrity\s*=\s*["']([^"']+)["']/i
   );
@@ -259,93 +217,203 @@ function getIntegrityAttribute(tag) {
 }
 
 /**
- * Check whether a tag has an integrity attribute.
+ * Check whether an HTML tag contains an integrity attribute.
  */
 function hasSRI(tag) {
-  return Boolean(
-    getIntegrityAttribute(tag)
-  );
+  return getIntegrityAttribute(tag) !== null;
 }
 
 /**
- * Extract external scripts and stylesheets.
+ * Verify a downloaded resource against its SRI attribute.
+ *
+ * Returns:
+ *
+ * {
+ *   valid: true/false,
+ *   matchingHash: 'sha384-...',
+ *   calculatedHashes: {...}
+ * }
+ */
+function verifySRI(content, integrity) {
+  const hashes = parseIntegrity(integrity);
+
+  if (hashes.length === 0) {
+    return {
+      valid: false,
+      matchingHash: null,
+      calculatedHashes: {}
+    };
+  }
+
+  const calculatedHashes = {};
+
+  for (const item of hashes) {
+    const calculated = calculateSRI(
+      content,
+      item.algorithm
+    );
+
+    calculatedHashes[item.algorithm] = calculated;
+
+    // Use timingSafeEqual when possible.
+    const expectedBuffer = Buffer.from(
+      `${item.algorithm}-${item.hash}`
+    );
+
+    const actualBuffer = Buffer.from(calculated);
+
+    if (
+      expectedBuffer.length === actualBuffer.length &&
+      crypto.timingSafeEqual(
+        expectedBuffer,
+        actualBuffer
+      )
+    ) {
+      return {
+        valid: true,
+        matchingHash: calculated,
+        calculatedHashes
+      };
+    }
+  }
+
+  return {
+    valid: false,
+    matchingHash: null,
+    calculatedHashes
+  };
+}
+
+/**
+ * Check if domain should be excluded.
+ */
+function isExcludedDomain(
+  urlString,
+  customExclusions = new Set()
+) {
+  try {
+    const urlObj = new URL(urlString);
+
+    const hostname =
+      urlObj.hostname.toLowerCase();
+
+    // Exact custom exclusions
+    if (customExclusions.has(hostname)) {
+      return true;
+    }
+
+    // Default exclusions
+    return EXCLUDED_DOMAINS.some(
+      (excluded) => {
+        return (
+          hostname === excluded ||
+          hostname.endsWith(`.${excluded}`)
+        );
+      }
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve a resource URL relative to the page URL.
+ */
+function resolveUrl(baseUrl, relativeUrl) {
+  try {
+    return new URL(
+      relativeUrl,
+      baseUrl
+    ).toString();
+  } catch {
+    return relativeUrl;
+  }
+}
+
+/**
+ * Extract external resources from HTML.
+ *
+ * Supports:
+ *
+ * <script src="...">
+ * <link rel="stylesheet" href="...">
  */
 function extractResources(
   html,
-  baseUrl,
-  customExclusions = new Set()
+  customExclusions = new Set(),
+  baseUrl = null
 ) {
   const resources = [];
 
-  let match;
-
-  // Script tags
+  // SCRIPT TAGS
   const scriptRegex =
     /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
+
+  let match;
 
   while (
     (match = scriptRegex.exec(html)) !== null
   ) {
-    const src = match[1];
+    const originalUrl = match[1];
 
-    try {
-      const absoluteUrl = new URL(
-        src,
-        baseUrl
-      ).toString();
+    const absoluteUrl = baseUrl
+      ? resolveUrl(baseUrl, originalUrl)
+      : originalUrl;
 
-      if (
-        !isExcludedDomain(
-          absoluteUrl,
-          customExclusions
-        )
-      ) {
-        resources.push({
-          type: 'script',
-          url: absoluteUrl,
-          tag: match[0],
-          integrity:
-            getIntegrityAttribute(match[0]),
-          hasSRI: hasSRI(match[0])
-        });
-      }
-    } catch {
-      // Ignore invalid URLs
+    if (
+      absoluteUrl &&
+      !isExcludedDomain(
+        absoluteUrl,
+        customExclusions
+      )
+    ) {
+      resources.push({
+        type: 'script',
+        url: absoluteUrl,
+        originalUrl,
+        tag: match[0],
+        integrity:
+          getIntegrityAttribute(match[0]),
+        hasSRI: hasSRI(match[0]),
+        status: hasSRI(match[0])
+          ? 'pending'
+          : 'missing'
+      });
     }
   }
 
-  // Stylesheet links
+  // STYLESHEET TAGS
   const linkRegex =
     /<link\b[^>]*\brel\s*=\s*["']stylesheet["'][^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi;
 
   while (
     (match = linkRegex.exec(html)) !== null
   ) {
-    const href = match[1];
+    const originalUrl = match[1];
 
-    try {
-      const absoluteUrl = new URL(
-        href,
-        baseUrl
-      ).toString();
+    const absoluteUrl = baseUrl
+      ? resolveUrl(baseUrl, originalUrl)
+      : originalUrl;
 
-      if (
-        !isExcludedDomain(
-          absoluteUrl,
-          customExclusions
-        )
-      ) {
-        resources.push({
-          type: 'stylesheet',
-          url: absoluteUrl,
-          tag: match[0],
-          integrity:
-            getIntegrityAttribute(match[0]),
-          hasSRI: hasSRI(match[0])
-        });
-      }
-    } catch {
-      // Ignore invalid URLs
+    if (
+      absoluteUrl &&
+      !isExcludedDomain(
+        absoluteUrl,
+        customExclusions
+      )
+    ) {
+      resources.push({
+        type: 'stylesheet',
+        url: absoluteUrl,
+        originalUrl,
+        tag: match[0],
+        integrity:
+          getIntegrityAttribute(match[0]),
+        hasSRI: hasSRI(match[0]),
+        status: hasSRI(match[0])
+          ? 'pending'
+          : 'missing'
+      });
     }
   }
 
@@ -353,13 +421,13 @@ function extractResources(
 }
 
 /**
- * Extract same-domain links for crawling.
+ * Extract all same-domain links from HTML.
  */
 function extractLinks(html, baseUrl) {
   const links = new Set();
 
   const linkRegex =
-    /href\s*=\s*["']([^"']+)["']/gi;
+    /\bhref\s*=\s*["']([^"']+)["']/gi;
 
   let match;
 
@@ -379,10 +447,8 @@ function extractLinks(html, baseUrl) {
         continue;
       }
 
-      const absoluteUrl = new URL(
-        link,
-        baseUrl
-      ).toString();
+      const absoluteUrl =
+        resolveUrl(baseUrl, link);
 
       const absoluteUrlObj =
         new URL(absoluteUrl);
@@ -391,8 +457,8 @@ function extractLinks(html, baseUrl) {
         new URL(baseUrl);
 
       if (
-        absoluteUrlObj.hostname ===
-        baseUrlObj.hostname
+        absoluteUrlObj.hostname.toLowerCase() ===
+        baseUrlObj.hostname.toLowerCase()
       ) {
         links.add(absoluteUrl);
       }
@@ -405,20 +471,7 @@ function extractLinks(html, baseUrl) {
 }
 
 /**
- * Resolve a relative URL.
- */
-function resolveUrl(
-  baseUrl,
-  relativeUrl
-) {
-  return new URL(
-    relativeUrl,
-    baseUrl
-  ).toString();
-}
-
-/**
- * Check one resource.
+ * Download and verify a single resource.
  */
 async function checkResourceSRI(
   resource,
@@ -427,41 +480,43 @@ async function checkResourceSRI(
   if (!resource.hasSRI) {
     return {
       ...resource,
-      status: 'MISSING',
+      status: 'missing',
       valid: false,
-      calculated: []
+      calculatedHashes: {},
+      matchingHash: null,
+      error: null
     };
   }
 
   try {
-    const response = await fetchUrl(
+    const content = await fetchUrl(
       resource.url,
       cookies
     );
 
-    const verification =
-      verifySRI(
-        response.data,
-        resource.integrity
-      );
+    const result = verifySRI(
+      content,
+      resource.integrity
+    );
 
     return {
       ...resource,
-      status: verification.valid
-        ? 'VALID'
-        : 'INVALID',
-      valid: verification.valid,
-      calculated:
-        verification.calculated,
-      matchingHash:
-        verification.matchingHash
+      status: result.valid
+        ? 'valid'
+        : 'invalid',
+      valid: result.valid,
+      matchingHash: result.matchingHash,
+      calculatedHashes:
+        result.calculatedHashes,
+      error: null
     };
   } catch (error) {
     return {
       ...resource,
-      status: 'ERROR',
+      status: 'error',
       valid: false,
-      calculated: [],
+      matchingHash: null,
+      calculatedHashes: {},
       error: error.message
     };
   }
@@ -481,20 +536,18 @@ async function checkSRI(
     cookies = null
   } = options;
 
+  // Parse custom exclusions
   const customExclusions = new Set();
 
   if (filter) {
     filter
       .split(',')
+      .map((domain) =>
+        domain.trim().toLowerCase()
+      )
+      .filter(Boolean)
       .forEach((domain) => {
-        const cleaned =
-          domain.trim().toLowerCase();
-
-        if (cleaned) {
-          customExclusions.add(
-            cleaned
-          );
-        }
+        customExclusions.add(domain);
       });
   }
 
@@ -502,6 +555,7 @@ async function checkSRI(
     printTitle();
 
     const visitedUrls = new Set();
+
     const allResources = [];
 
     const urlQueue = [
@@ -530,171 +584,103 @@ async function checkSRI(
         continue;
       }
 
-      console.log(
-        chalk.blue(
-          `\n📥 Fetching ${url}...`
-        )
-      );
-
-      let response;
-
       try {
-        response = await fetchUrl(
-          url,
-          cookies
+        console.log(
+          chalk.blue(
+            `\n📥 Fetching ${url}...`
+          )
         );
+
+        const htmlBuffer =
+          await fetchUrl(
+            url,
+            cookies
+          );
+
+        const html =
+          htmlBuffer.toString('utf8');
+
+        const resources =
+          extractResources(
+            html,
+            customExclusions,
+            url
+          );
+
+        // Actually download and verify
+        // every external resource.
+        for (const resource of resources) {
+          console.log(
+            chalk.gray(
+              `   Checking ${resource.type}: ${resource.url}`
+            )
+          );
+
+          const result =
+            await checkResourceSRI(
+              resource,
+              cookies
+            );
+
+          allResources.push({
+            ...result,
+            source: url
+          });
+        }
+
+        // Crawl same-domain pages
+        if (
+          crawl &&
+          depth < maxDepth
+        ) {
+          const links =
+            extractLinks(
+              html,
+              url
+            );
+
+          for (const link of links) {
+            if (
+              !visitedUrls.has(link)
+            ) {
+              urlQueue.push({
+                url: link,
+                depth: depth + 1
+              });
+            }
+          }
+        }
       } catch (error) {
         console.log(
           chalk.red(
             `   ❌ Error fetching: ${error.message}`
           )
         );
-
-        continue;
-      }
-
-      const html =
-        response.data.toString(
-          'utf8'
-        );
-
-      const resources =
-        extractResources(
-          html,
-          url,
-          customExclusions
-        );
-
-      console.log(
-        chalk.gray(
-          `   Found ${resources.length} external resources`
-        )
-      );
-
-      for (
-        const resource of resources
-      ) {
-        console.log(
-          chalk.gray(
-            `   🔍 Checking ${resource.type}: ${resource.url}`
-          )
-        );
-
-        const result =
-          await checkResourceSRI(
-            resource,
-            cookies
-          );
-
-        allResources.push({
-          ...result,
-          source: url
-        });
-
-        if (
-          result.status === 'VALID'
-        ) {
-          console.log(
-            chalk.green(
-              '      ✓ Valid SRI'
-            )
-          );
-        } else if (
-          result.status === 'INVALID'
-        ) {
-          console.log(
-            chalk.red(
-              '      ✗ INVALID SRI'
-            )
-          );
-
-          console.log(
-            chalk.gray(
-              `      Declared: ${resource.integrity}`
-            )
-          );
-
-          if (
-            result.calculated.length
-          ) {
-            console.log(
-              chalk.yellow(
-                `      Actual:   ${result.calculated.join(' ')}`
-              )
-            );
-          }
-        } else if (
-          result.status === 'MISSING'
-        ) {
-          console.log(
-            chalk.yellow(
-              '      ⚠ Missing SRI'
-            )
-          );
-        } else {
-          console.log(
-            chalk.red(
-              `      ❌ ${result.error}`
-            )
-          );
-        }
-      }
-
-      // Crawl same-domain pages
-      if (
-        crawl &&
-        depth < maxDepth
-      ) {
-        const links =
-          extractLinks(
-            html,
-            url
-          );
-
-        links.forEach(
-          (link) => {
-            if (
-              !visitedUrls.has(
-                link
-              )
-            ) {
-              urlQueue.push({
-                url: link,
-                depth:
-                  depth + 1
-              });
-            }
-          }
-        );
       }
     }
 
-    // Results
+    // Organize results
     const valid =
       allResources.filter(
-        (r) =>
-          r.status === 'VALID'
+        (r) => r.status === 'valid'
       );
 
     const invalid =
       allResources.filter(
-        (r) =>
-          r.status === 'INVALID'
+        (r) => r.status === 'invalid'
       );
 
     const missing =
       allResources.filter(
-        (r) =>
-          r.status === 'MISSING'
+        (r) => r.status === 'missing'
       );
 
     const errors =
       allResources.filter(
-        (r) =>
-          r.status === 'ERROR'
+        (r) => r.status === 'error'
       );
 
-    // Results summary
+    // RESULTS
     console.log(
       chalk.cyan(
         '\n\n╔════════════════════════════════════════╗'
@@ -721,39 +707,39 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.gray(
-        '━'.repeat(50)
-      )
+      chalk.gray('━'.repeat(50))
     );
 
     if (valid.length === 0) {
       console.log(
         chalk.gray(
-          '   None found.'
+          '   No valid SRI resources found.'
         )
       );
     } else {
       valid
-        .slice(0, 10)
-        .forEach(
-          (resource) => {
-            console.log(
-              chalk.green(
-                '   ✓'
-              ) +
-              ' ' +
-              chalk.cyan(
-                resource.type.padEnd(
-                  12
-                )
-              ) +
-              ' ' +
-              chalk.white(
-                resource.url
-              )
-            );
-          }
+        .slice(0, 20)
+        .forEach((resource) => {
+          console.log(
+            chalk.green('   ✓') +
+            ' ' +
+            chalk.cyan(
+              resource.type.padEnd(12)
+            ) +
+            ' ' +
+            chalk.white(
+              resource.url
+            )
+          );
+        });
+
+      if (valid.length > 20) {
+        console.log(
+          chalk.gray(
+            `   ... and ${valid.length - 20} more`
+          )
         );
+      }
     }
 
     // INVALID
@@ -764,56 +750,60 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.gray(
-        '━'.repeat(50)
-      )
+      chalk.gray('━'.repeat(50))
     );
 
     if (invalid.length === 0) {
       console.log(
         chalk.green(
-          '   None found.'
+          '   No invalid SRI hashes found.'
         )
       );
     } else {
       invalid
-        .slice(0, 10)
-        .forEach(
-          (resource) => {
-            console.log(
-              chalk.red(
-                '   ✗'
-              ) +
-              ' ' +
-              chalk.cyan(
-                resource.type.padEnd(
-                  12
-                )
-              ) +
-              ' ' +
-              chalk.white(
-                resource.url
-              )
-            );
+        .slice(0, 20)
+        .forEach((resource) => {
+          console.log(
+            chalk.red('   ✗') +
+            ' ' +
+            chalk.cyan(
+              resource.type.padEnd(12)
+            ) +
+            ' ' +
+            chalk.white(
+              resource.url
+            )
+          );
 
+          if (resource.integrity) {
             console.log(
-              chalk.gray(
+              chalk.yellow(
                 `      Declared: ${resource.integrity}`
               )
             );
-
-            if (
-              resource.calculated
-                .length > 0
-            ) {
-              console.log(
-                chalk.yellow(
-                  `      Actual:   ${resource.calculated.join(' ')}`
-                )
-              );
-            }
           }
+
+          const calculated =
+            Object.values(
+              resource.calculatedHashes
+            );
+
+          if (calculated.length > 0) {
+            console.log(
+              chalk.magenta(
+                `      Actual:   ${calculated.join(', ')}`
+              )
+            );
+          }
+        });
+
+      if (invalid.length > 20) {
+        console.log(
+          chalk.gray(
+            `   ... and ${invalid.length - 20} more`
+          )
         );
+      }
     }
 
     // MISSING
@@ -824,85 +814,81 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.gray(
-        '━'.repeat(50)
-      )
+      chalk.gray('━'.repeat(50))
     );
 
     if (missing.length === 0) {
       console.log(
         chalk.green(
-          '   None found.'
+          '   All checked resources have SRI.'
         )
       );
     } else {
       missing
-        .slice(0, 10)
-        .forEach(
-          (resource) => {
-            console.log(
-              chalk.yellow(
-                '   !'
-              ) +
-              ' ' +
-              chalk.cyan(
-                resource.type.padEnd(
-                  12
-                )
-              ) +
-              ' ' +
-              chalk.white(
-                resource.url
-              )
-            );
-          }
+        .slice(0, 20)
+        .forEach((resource) => {
+          console.log(
+            chalk.yellow('   !') +
+            ' ' +
+            chalk.cyan(
+              resource.type.padEnd(12)
+            ) +
+            ' ' +
+            chalk.white(
+              resource.url
+            )
+          );
+        });
+
+      if (missing.length > 20) {
+        console.log(
+          chalk.gray(
+            `   ... and ${missing.length - 20} more`
+          )
         );
+      }
     }
 
     // ERRORS
-    if (errors.length > 0) {
+    console.log(
+      chalk.magenta(
+        `\n🚨 ERRORS (${errors.length}):`
+      )
+    );
+
+    console.log(
+      chalk.gray('━'.repeat(50))
+    );
+
+    if (errors.length === 0) {
       console.log(
-        chalk.red(
-          `\n🚨 ERRORS (${errors.length}):`
+        chalk.green(
+          '   No resource errors.'
         )
       );
-
-      console.log(
-        chalk.gray(
-          '━'.repeat(50)
-        )
-      );
-
+    } else {
       errors
-        .slice(0, 10)
-        .forEach(
-          (resource) => {
-            console.log(
-              chalk.red(
-                '   ✗'
-              ) +
-              ' ' +
-              chalk.cyan(
-                resource.type.padEnd(
-                  12
-                )
-              ) +
-              ' ' +
-              chalk.white(
-                resource.url
-              )
-            );
-
-            console.log(
-              chalk.gray(
-                `      ${resource.error}`
-              )
-            );
-          }
-        );
+        .slice(0, 20)
+        .forEach((resource) => {
+          console.log(
+            chalk.magenta('   !') +
+            ' ' +
+            chalk.cyan(
+              resource.type.padEnd(12)
+            ) +
+            ' ' +
+            chalk.white(
+              resource.url
+            ) +
+            '\n      ' +
+            chalk.red(
+              resource.error
+            )
+          );
+        });
     }
 
-    // Statistics
+    // STATISTICS
     console.log(
       chalk.cyan(
         '\n╔════════════════════════════════════════╗'
@@ -922,9 +908,7 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white(
-        '║ Total Resources:    '
-      ) +
+      chalk.white('║ Total Resources:    ') +
       chalk.yellow(
         String(
           allResources.length
@@ -934,9 +918,7 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white(
-        '║ Valid SRI:          '
-      ) +
+      chalk.white('║ Valid SRI:          ') +
       chalk.green(
         String(
           valid.length
@@ -946,9 +928,7 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white(
-        '║ Invalid SRI:        '
-      ) +
+      chalk.white('║ Invalid SRI:        ') +
       chalk.red(
         String(
           invalid.length
@@ -958,9 +938,7 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white(
-        '║ Missing SRI:        '
-      ) +
+      chalk.white('║ Missing SRI:        ') +
       chalk.yellow(
         String(
           missing.length
@@ -970,10 +948,8 @@ async function checkSRI(
     );
 
     console.log(
-      chalk.white(
-        '║ Errors:             '
-      ) +
-      chalk.red(
+      chalk.white('║ Errors:             ') +
+      chalk.magenta(
         String(
           errors.length
         ).padStart(17)
@@ -981,31 +957,25 @@ async function checkSRI(
       chalk.white(' ║')
     );
 
-    // SRI coverage
-    const coverage =
+    const percentage =
       allResources.length > 0
         ? Math.round(
-            ((valid.length +
-              invalid.length) /
+            (valid.length /
               allResources.length) *
               100
           )
         : 0;
 
     console.log(
-      chalk.white(
-        '║ SRI Coverage:       '
-      ) +
+      chalk.white('║ Valid Coverage:     ') +
       (
-        coverage >= 80
+        percentage >= 80
           ? chalk.green
-          : coverage >= 50
+          : percentage >= 50
             ? chalk.yellow
             : chalk.red
       )(
-        `${coverage}%`.padStart(
-          17
-        )
+        `${percentage}%`.padStart(17)
       ) +
       chalk.white(' ║')
     );
@@ -1016,13 +986,40 @@ async function checkSRI(
       )
     );
 
+    // Recommendations
+    if (
+      invalid.length > 0
+    ) {
+      console.log(
+        chalk.red(
+          '\n🚨 Action required: invalid SRI hashes were found.'
+        )
+      );
+
+      console.log(
+        chalk.gray(
+          '   The declared integrity hash does not match the downloaded resource.'
+        )
+      );
+    }
+
+    if (
+      missing.length > 0
+    ) {
+      console.log(
+        chalk.yellow(
+          '\n💡 Tip: Resources without SRI should be reviewed and given an appropriate integrity hash.'
+        )
+      );
+    }
+
     return {
       total: allResources.length,
       valid: valid.length,
       invalid: invalid.length,
       missing: missing.length,
       errors: errors.length,
-      coverage,
+      coverage: percentage,
       resources: allResources
     };
   } catch (error) {
@@ -1038,18 +1035,19 @@ async function checkSRI(
 
 module.exports = {
   checkSRI,
-  calculateSRI,
+  checkResourceSRI,
   verifySRI,
+  calculateSRI,
   parseIntegrity,
+  getIntegrityAttribute,
   extractResources,
   extractLinks,
   fetchUrl,
   isExcludedDomain,
   hasSRI,
-  getIntegrityAttribute,
   resolveUrl,
-  checkResourceSRI,
   printTitle
 };
+
 
 
