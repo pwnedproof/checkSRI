@@ -1,4 +1,4 @@
-```js
+```javascript
 const https = require('https');
 const http = require('http');
 const crypto = require('crypto');
@@ -37,10 +37,9 @@ function printTitle() {
 }
 
 /**
- * Fetch URL and return raw Buffer.
+ * Fetch URL and return raw bytes.
  *
- * Raw bytes are important because SRI hashes are calculated
- * against the exact bytes of the resource.
+ * SRI must be calculated from the exact bytes of the resource.
  */
 async function fetchUrl(urlString, cookies = null, redirectCount = 0) {
   return new Promise((resolve, reject) => {
@@ -74,7 +73,7 @@ async function fetchUrl(urlString, cookies = null, redirectCount = 0) {
         timeout: 10000
       },
       (res) => {
-        // Handle redirects
+        // Follow redirects
         if (
           res.statusCode >= 300 &&
           res.statusCode < 400 &&
@@ -98,6 +97,7 @@ async function fetchUrl(urlString, cookies = null, redirectCount = 0) {
 
         if (res.statusCode < 200 || res.statusCode >= 300) {
           res.resume();
+
           return reject(
             new Error(
               `HTTP ${res.statusCode} while fetching ${urlString}`
@@ -131,7 +131,7 @@ async function fetchUrl(urlString, cookies = null, redirectCount = 0) {
 }
 
 /**
- * Calculate SRI hash for raw resource bytes.
+ * Calculate an SRI hash.
  *
  * Supported algorithms:
  * sha256
@@ -139,23 +139,27 @@ async function fetchUrl(urlString, cookies = null, redirectCount = 0) {
  * sha512
  */
 function calculateSRI(content, algorithm = 'sha384') {
-  const supportedAlgorithms = ['sha256', 'sha384', 'sha512'];
+  const supportedAlgorithms = [
+    'sha256',
+    'sha384',
+    'sha512'
+  ];
 
   if (!supportedAlgorithms.includes(algorithm)) {
-    throw new Error(`Unsupported SRI algorithm: ${algorithm}`);
+    throw new Error(
+      `Unsupported SRI algorithm: ${algorithm}`
+    );
   }
 
   const hash = crypto.createHash(algorithm);
 
   hash.update(content);
 
-  const digest = hash.digest('base64');
-
-  return `${algorithm}-${digest}`;
+  return `${algorithm}-${hash.digest('base64')}`;
 }
 
 /**
- * Extract hashes from an integrity attribute.
+ * Extract valid hashes from an integrity attribute.
  *
  * Example:
  *
@@ -171,20 +175,22 @@ function parseIntegrity(integrity) {
     .split(/\s+/)
     .filter(Boolean)
     .filter((value) => {
-      return /^(sha256|sha384|sha512)-[A-Za-z0-9+/]+={0,2}$/.test(value);
+      return /^(sha256|sha384|sha512)-[A-Za-z0-9+/]+={0,2}$/.test(
+        value
+      );
     });
 }
 
 /**
- * Verify an integrity attribute against actual resource content.
+ * Verify SRI against the actual resource.
  *
- * Multiple hashes are allowed. If ANY valid supported hash matches,
- * the SRI attribute is considered valid.
+ * If any declared hash matches the actual resource,
+ * the SRI is considered valid.
  */
 function verifySRI(content, integrity) {
-  const hashes = parseIntegrity(integrity);
+  const declaredHashes = parseIntegrity(integrity);
 
-  if (hashes.length === 0) {
+  if (declaredHashes.length === 0) {
     return {
       valid: false,
       calculated: [],
@@ -194,16 +200,19 @@ function verifySRI(content, integrity) {
 
   const algorithms = [
     ...new Set(
-      hashes.map((hash) => hash.split('-')[0])
+      declaredHashes.map(
+        (hash) => hash.split('-')[0]
+      )
     )
   ];
 
-  const calculated = algorithms.map((algorithm) => {
-    return calculateSRI(content, algorithm);
-  });
+  const calculated = algorithms.map(
+    (algorithm) =>
+      calculateSRI(content, algorithm)
+  );
 
-  const matchingHash = hashes.find((hash) =>
-    calculated.includes(hash)
+  const matchingHash = declaredHashes.find(
+    (hash) => calculated.includes(hash)
   );
 
   return {
@@ -214,32 +223,33 @@ function verifySRI(content, integrity) {
 }
 
 /**
- * Check if domain should be excluded.
+ * Check if a domain should be excluded.
  */
-function isExcludedDomain(urlString, customExclusions = new Set()) {
+function isExcludedDomain(
+  urlString,
+  customExclusions = new Set()
+) {
   try {
     const urlObj = new URL(urlString);
-    const hostname = urlObj.hostname.toLowerCase();
+    const hostname =
+      urlObj.hostname.toLowerCase();
 
-    // Exact custom exclusion
     if (customExclusions.has(hostname)) {
       return true;
     }
 
-    // Default exclusions
-    return EXCLUDED_DOMAINS.some((excluded) => {
-      return (
+    return EXCLUDED_DOMAINS.some(
+      (excluded) =>
         hostname === excluded ||
         hostname.endsWith(`.${excluded}`)
-      );
-    });
+    );
   } catch {
     return false;
   }
 }
 
 /**
- * Extract the integrity attribute from an HTML tag.
+ * Get the integrity attribute from an HTML tag.
  */
 function getIntegrityAttribute(tag) {
   const match = tag.match(
@@ -250,14 +260,16 @@ function getIntegrityAttribute(tag) {
 }
 
 /**
- * Check whether an HTML tag contains an integrity attribute.
+ * Check whether a tag has an integrity attribute.
  */
 function hasSRI(tag) {
-  return Boolean(getIntegrityAttribute(tag));
+  return Boolean(
+    getIntegrityAttribute(tag)
+  );
 }
 
 /**
- * Extract external resources from HTML.
+ * Extract external scripts and stylesheets.
  */
 function extractResources(
   html,
@@ -266,20 +278,24 @@ function extractResources(
 ) {
   const resources = [];
 
+  let match;
+
   // Script tags
   const scriptRegex =
     /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/gi;
 
-  let match;
-
-  while ((match = scriptRegex.exec(html)) !== null) {
+  while (
+    (match = scriptRegex.exec(html)) !== null
+  ) {
     const src = match[1];
 
     try {
-      const absoluteUrl = resolveUrl(baseUrl, src);
+      const absoluteUrl = new URL(
+        src,
+        baseUrl
+      ).toString();
 
       if (
-        absoluteUrl &&
         !isExcludedDomain(
           absoluteUrl,
           customExclusions
@@ -289,27 +305,32 @@ function extractResources(
           type: 'script',
           url: absoluteUrl,
           tag: match[0],
-          integrity: getIntegrityAttribute(match[0]),
+          integrity:
+            getIntegrityAttribute(match[0]),
           hasSRI: hasSRI(match[0])
         });
       }
     } catch {
-      // Ignore invalid resource URLs
+      // Ignore invalid URLs
     }
   }
 
-  // Stylesheet link tags
+  // Stylesheet links
   const linkRegex =
     /<link\b[^>]*\brel\s*=\s*["']stylesheet["'][^>]*\bhref\s*=\s*["']([^"']+)["'][^>]*>/gi;
 
-  while ((match = linkRegex.exec(html)) !== null) {
+  while (
+    (match = linkRegex.exec(html)) !== null
+  ) {
     const href = match[1];
 
     try {
-      const absoluteUrl = resolveUrl(baseUrl, href);
+      const absoluteUrl = new URL(
+        href,
+        baseUrl
+      ).toString();
 
       if (
-        absoluteUrl &&
         !isExcludedDomain(
           absoluteUrl,
           customExclusions
@@ -319,12 +340,13 @@ function extractResources(
           type: 'stylesheet',
           url: absoluteUrl,
           tag: match[0],
-          integrity: getIntegrityAttribute(match[0]),
+          integrity:
+            getIntegrityAttribute(match[0]),
           hasSRI: hasSRI(match[0])
         });
       }
     } catch {
-      // Ignore invalid resource URLs
+      // Ignore invalid URLs
     }
   }
 
@@ -332,7 +354,7 @@ function extractResources(
 }
 
 /**
- * Extract all links from HTML for crawling.
+ * Extract same-domain links for crawling.
  */
 function extractLinks(html, baseUrl) {
   const links = new Set();
@@ -342,7 +364,9 @@ function extractLinks(html, baseUrl) {
 
   let match;
 
-  while ((match = linkRegex.exec(html)) !== null) {
+  while (
+    (match = linkRegex.exec(html)) !== null
+  ) {
     try {
       const link = match[1];
 
@@ -356,12 +380,17 @@ function extractLinks(html, baseUrl) {
         continue;
       }
 
-      const absoluteUrl = resolveUrl(baseUrl, link);
+      const absoluteUrl = new URL(
+        link,
+        baseUrl
+      ).toString();
 
-      const absoluteUrlObj = new URL(absoluteUrl);
-      const baseUrlObj = new URL(baseUrl);
+      const absoluteUrlObj =
+        new URL(absoluteUrl);
 
-      // Only crawl the same hostname
+      const baseUrlObj =
+        new URL(baseUrl);
+
       if (
         absoluteUrlObj.hostname ===
         baseUrlObj.hostname
@@ -369,7 +398,7 @@ function extractLinks(html, baseUrl) {
         links.add(absoluteUrl);
       }
     } catch {
-      // Skip invalid URLs
+      // Ignore invalid URLs
     }
   }
 
@@ -377,17 +406,25 @@ function extractLinks(html, baseUrl) {
 }
 
 /**
- * Resolve relative URLs to absolute URLs.
+ * Resolve a relative URL.
  */
-function resolveUrl(baseUrl, relativeUrl) {
-  return new URL(relativeUrl, baseUrl).toString();
+function resolveUrl(
+  baseUrl,
+  relativeUrl
+) {
+  return new URL(
+    relativeUrl,
+    baseUrl
+  ).toString();
 }
 
 /**
- * Check a single resource's SRI.
+ * Check one resource.
  */
-async function checkResourceSRI(resource, cookies = null) {
-  // No integrity attribute
+async function checkResourceSRI(
+  resource,
+  cookies = null
+) {
   if (!resource.hasSRI) {
     return {
       ...resource,
@@ -403,10 +440,11 @@ async function checkResourceSRI(resource, cookies = null) {
       cookies
     );
 
-    const verification = verifySRI(
-      response.data,
-      resource.integrity
-    );
+    const verification =
+      verifySRI(
+        response.data,
+        resource.integrity
+      );
 
     return {
       ...resource,
@@ -414,16 +452,18 @@ async function checkResourceSRI(resource, cookies = null) {
         ? 'VALID'
         : 'INVALID',
       valid: verification.valid,
-      calculated: verification.calculated,
-      matchingHash: verification.matchingHash
+      calculated:
+        verification.calculated,
+      matchingHash:
+        verification.matchingHash
     };
   } catch (error) {
     return {
       ...resource,
       status: 'ERROR',
       valid: false,
-      error: error.message,
-      calculated: []
+      calculated: [],
+      error: error.message
     };
   }
 }
@@ -431,7 +471,10 @@ async function checkResourceSRI(resource, cookies = null) {
 /**
  * Main SRI checker.
  */
-async function checkSRI(urlString, options = {}) {
+async function checkSRI(
+  urlString,
+  options = {}
+) {
   const {
     crawl = false,
     maxDepth = 2,
@@ -439,17 +482,21 @@ async function checkSRI(urlString, options = {}) {
     cookies = null
   } = options;
 
-  // Parse custom exclusions
   const customExclusions = new Set();
 
   if (filter) {
-    filter.split(',').forEach((domain) => {
-      const cleaned = domain.trim().toLowerCase();
+    filter
+      .split(',')
+      .forEach((domain) => {
+        const cleaned =
+          domain.trim().toLowerCase();
 
-      if (cleaned) {
-        customExclusions.add(cleaned);
-      }
-    });
+        if (cleaned) {
+          customExclusions.add(
+            cleaned
+          );
+        }
+      });
   }
 
   try {
@@ -466,7 +513,10 @@ async function checkSRI(urlString, options = {}) {
     ];
 
     while (urlQueue.length > 0) {
-      const { url, depth } = urlQueue.shift();
+      const {
+        url,
+        depth
+      } = urlQueue.shift();
 
       if (visitedUrls.has(url)) {
         continue;
@@ -474,8 +524,17 @@ async function checkSRI(urlString, options = {}) {
 
       visitedUrls.add(url);
 
+      if (
+        crawl &&
+        depth > maxDepth
+      ) {
+        continue;
+      }
+
       console.log(
-        chalk.blue(`\n📥 Fetching ${url}...`)
+        chalk.blue(
+          `\n📥 Fetching ${url}...`
+        )
       );
 
       let response;
@@ -495,14 +554,17 @@ async function checkSRI(urlString, options = {}) {
         continue;
       }
 
-      // Convert HTML bytes to text
-      const html = response.data.toString('utf8');
+      const html =
+        response.data.toString(
+          'utf8'
+        );
 
-      const resources = extractResources(
-        html,
-        url,
-        customExclusions
-      );
+      const resources =
+        extractResources(
+          html,
+          url,
+          customExclusions
+        );
 
       console.log(
         chalk.gray(
@@ -510,87 +572,130 @@ async function checkSRI(urlString, options = {}) {
         )
       );
 
-      // Verify each resource
-      for (const resource of resources) {
+      for (
+        const resource of resources
+      ) {
         console.log(
           chalk.gray(
             `   🔍 Checking ${resource.type}: ${resource.url}`
           )
         );
 
-        const result = await checkResourceSRI(
-          resource,
-          cookies
-        );
+        const result =
+          await checkResourceSRI(
+            resource,
+            cookies
+          );
 
         allResources.push({
           ...result,
           source: url
         });
 
-        if (result.status === 'VALID') {
+        if (
+          result.status === 'VALID'
+        ) {
           console.log(
-            chalk.green('      ✓ Valid SRI')
+            chalk.green(
+              '      ✓ Valid SRI'
+            )
           );
-        } else if (result.status === 'INVALID') {
+        } else if (
+          result.status === 'INVALID'
+        ) {
           console.log(
-            chalk.red('      ✗ INVALID SRI')
+            chalk.red(
+              '      ✗ INVALID SRI'
+            )
           );
-        } else if (result.status === 'MISSING') {
+
           console.log(
-            chalk.yellow('      ⚠ Missing SRI')
+            chalk.gray(
+              `      Declared: ${resource.integrity}`
+            )
+          );
+
+          if (
+            result.calculated.length
+          ) {
+            console.log(
+              chalk.yellow(
+                `      Actual:   ${result.calculated.join(' ')}`
+              )
+            );
+          }
+        } else if (
+          result.status === 'MISSING'
+        ) {
+          console.log(
+            chalk.yellow(
+              '      ⚠ Missing SRI'
+            )
           );
         } else {
           console.log(
             chalk.red(
-              `      ❌ Error: ${result.error}`
+              `      ❌ ${result.error}`
             )
           );
         }
       }
 
-      // Crawl same-domain links
+      // Crawl same-domain pages
       if (
         crawl &&
         depth < maxDepth
       ) {
-        const links = extractLinks(
-          html,
-          url
-        );
+        const links =
+          extractLinks(
+            html,
+            url
+          );
 
-        links.forEach((link) => {
-          if (!visitedUrls.has(link)) {
-            urlQueue.push({
-              url: link,
-              depth: depth + 1
-            });
+        links.forEach(
+          (link) => {
+            if (
+              !visitedUrls.has(
+                link
+              )
+            ) {
+              urlQueue.push({
+                url: link,
+                depth:
+                  depth + 1
+              });
+            }
           }
-        });
+        );
       }
     }
 
     // Results
-    const valid = allResources.filter(
-      (r) => r.status === 'VALID'
-    );
+    const valid =
+      allResources.filter(
+        (r) =>
+          r.status === 'VALID'
+      );
 
-    const invalid = allResources.filter(
-      (r) => r.status === 'INVALID'
-    );
+    const invalid =
+      allResources.filter(
+        (r) =>
+          r.status === 'INVALID'
+      );
 
-    const missing = allResources.filter(
-      (r) => r.status === 'MISSING'
-    );
+    const missing =
+      allResources.filter(
+        (r) =>
+          r.status === 'MISSING'
+      );
 
-    const errors = allResources.filter(
-      (r) => r.status === 'ERROR'
-    );
+    const errors =
+      allResources.filter(
+        (r) =>
+          r.status === 'ERROR'
+      );
 
-    // ========================================
-    // RESULTS SUMMARY
-    // ========================================
-
+    // Results summary
     console.log(
       chalk.cyan(
         '\n\n╔════════════════════════════════════════╗'
@@ -617,33 +722,39 @@ async function checkSRI(urlString, options = {}) {
     );
 
     console.log(
-      chalk.gray('━'.repeat(50))
+      chalk.gray(
+        '━'.repeat(50)
+      )
     );
 
     if (valid.length === 0) {
       console.log(
-        chalk.gray('   None found.')
+        chalk.gray(
+          '   None found.'
+        )
       );
     } else {
-      valid.slice(0, 10).forEach((resource) => {
-        console.log(
-          chalk.green('   ✓') +
-          ' ' +
-          chalk.cyan(
-            resource.type.padEnd(12)
-          ) +
-          ' ' +
-          chalk.white(resource.url)
+      valid
+        .slice(0, 10)
+        .forEach(
+          (resource) => {
+            console.log(
+              chalk.green(
+                '   ✓'
+              ) +
+              ' ' +
+              chalk.cyan(
+                resource.type.padEnd(
+                  12
+                )
+              ) +
+              ' ' +
+              chalk.white(
+                resource.url
+              )
+            );
+          }
         );
-      });
-
-      if (valid.length > 10) {
-        console.log(
-          chalk.gray(
-            `   ... and ${valid.length - 10} more`
-          )
-        );
-      }
     }
 
     // INVALID
@@ -654,47 +765,56 @@ async function checkSRI(urlString, options = {}) {
     );
 
     console.log(
-      chalk.gray('━'.repeat(50))
+      chalk.gray(
+        '━'.repeat(50)
+      )
     );
 
     if (invalid.length === 0) {
       console.log(
-        chalk.green('   None found.')
+        chalk.green(
+          '   None found.'
+        )
       );
     } else {
-      invalid.slice(0, 10).forEach((resource) => {
-        console.log(
-          chalk.red('   ✗') +
-          ' ' +
-          chalk.cyan(
-            resource.type.padEnd(12)
-          ) +
-          ' ' +
-          chalk.white(resource.url)
-        );
+      invalid
+        .slice(0, 10)
+        .forEach(
+          (resource) => {
+            console.log(
+              chalk.red(
+                '   ✗'
+              ) +
+              ' ' +
+              chalk.cyan(
+                resource.type.padEnd(
+                  12
+                )
+              ) +
+              ' ' +
+              chalk.white(
+                resource.url
+              )
+            );
 
-        console.log(
-          chalk.gray(
-            `      Declared: ${resource.integrity}`
-          )
-        );
+            console.log(
+              chalk.gray(
+                `      Declared: ${resource.integrity}`
+              )
+            );
 
-        if (resource.calculated.length > 0) {
-          console.log(
-            chalk.yellow(
-              `      Actual:   ${resource.calculated.join(' ')}`
-            )
-          );
-        }
-      });
-
-      if (invalid.length > 10) {
-        console.log(
-          chalk.gray(
-            `   ... and ${invalid.length - 10} more`
-          )
+            if (
+              resource.calculated
+                .length > 0
+            ) {
+              console.log(
+                chalk.yellow(
+                  `      Actual:   ${resource.calculated.join(' ')}`
+                )
+              );
+            }
+          }
         );
-      }
     }
 
     // MISSING
@@ -705,33 +825,39 @@ async function checkSRI(urlString, options = {}) {
     );
 
     console.log(
-      chalk.gray('━'.repeat(50))
+      chalk.gray(
+        '━'.repeat(50)
+      )
     );
 
     if (missing.length === 0) {
       console.log(
-        chalk.green('   None found.')
+        chalk.green(
+          '   None found.'
+        )
       );
     } else {
-      missing.slice(0, 10).forEach((resource) => {
-        console.log(
-          chalk.yellow('   !') +
-          ' ' +
-          chalk.cyan(
-            resource.type.padEnd(12)
-          ) +
-          ' ' +
-          chalk.white(resource.url)
+      missing
+        .slice(0, 10)
+        .forEach(
+          (resource) => {
+            console.log(
+              chalk.yellow(
+                '   !'
+              ) +
+              ' ' +
+              chalk.cyan(
+                resource.type.padEnd(
+                  12
+                )
+              ) +
+              ' ' +
+              chalk.white(
+                resource.url
+              )
+            );
+          }
         );
-      });
-
-      if (missing.length > 10) {
-        console.log(
-          chalk.gray(
-            `   ... and ${missing.length - 10} more`
-          )
-        );
-      }
     }
 
     // ERRORS
@@ -743,32 +869,41 @@ async function checkSRI(urlString, options = {}) {
       );
 
       console.log(
-        chalk.gray('━'.repeat(50))
+        chalk.gray(
+          '━'.repeat(50)
+        )
       );
 
-      errors.slice(0, 10).forEach((resource) => {
-        console.log(
-          chalk.red('   ✗') +
-          ' ' +
-          chalk.cyan(
-            resource.type.padEnd(12)
-          ) +
-          ' ' +
-          chalk.white(resource.url)
-        );
+      errors
+        .slice(0, 10)
+        .forEach(
+          (resource) => {
+            console.log(
+              chalk.red(
+                '   ✗'
+              ) +
+              ' ' +
+              chalk.cyan(
+                resource.type.padEnd(
+                  12
+                )
+              ) +
+              ' ' +
+              chalk.white(
+                resource.url
+              )
+            );
 
-        console.log(
-          chalk.gray(
-            `      ${resource.error}`
-          )
+            console.log(
+              chalk.gray(
+                `      ${resource.error}`
+              )
+            );
+          }
         );
-      });
     }
 
-    // ========================================
-    // STATISTICS
-    // ========================================
-
+    // Statistics
     console.log(
       chalk.cyan(
         '\n╔════════════════════════════════════════╗'
@@ -788,56 +923,80 @@ async function checkSRI(urlString, options = {}) {
     );
 
     console.log(
-      chalk.white('║ Total Resources:    ') +
+      chalk.white(
+        '║ Total Resources:    '
+      ) +
       chalk.yellow(
-        String(allResources.length).padStart(17)
+        String(
+          allResources.length
+        ).padStart(17)
       ) +
       chalk.white(' ║')
     );
 
     console.log(
-      chalk.white('║ Valid SRI:          ') +
+      chalk.white(
+        '║ Valid SRI:          '
+      ) +
       chalk.green(
-        String(valid.length).padStart(17)
+        String(
+          valid.length
+        ).padStart(17)
       ) +
       chalk.white(' ║')
     );
 
     console.log(
-      chalk.white('║ Invalid SRI:        ') +
+      chalk.white(
+        '║ Invalid SRI:        '
+      ) +
       chalk.red(
-        String(invalid.length).padStart(17)
+        String(
+          invalid.length
+        ).padStart(17)
       ) +
       chalk.white(' ║')
     );
 
     console.log(
-      chalk.white('║ Missing SRI:        ') +
+      chalk.white(
+        '║ Missing SRI:        '
+      ) +
       chalk.yellow(
-        String(missing.length).padStart(17)
+        String(
+          missing.length
+        ).padStart(17)
       ) +
       chalk.white(' ║')
     );
 
     console.log(
-      chalk.white('║ Errors:             ') +
+      chalk.white(
+        '║ Errors:             '
+      ) +
       chalk.red(
-        String(errors.length).padStart(17)
+        String(
+          errors.length
+        ).padStart(17)
       ) +
       chalk.white(' ║')
     );
 
+    // SRI coverage
     const coverage =
       allResources.length > 0
         ? Math.round(
-            (valid.length /
+            ((valid.length +
+              invalid.length) /
               allResources.length) *
               100
           )
         : 0;
 
     console.log(
-      chalk.white('║ Validity:           ') +
+      chalk.white(
+        '║ SRI Coverage:       '
+      ) +
       (
         coverage >= 80
           ? chalk.green
@@ -845,7 +1004,9 @@ async function checkSRI(urlString, options = {}) {
             ? chalk.yellow
             : chalk.red
       )(
-        `${coverage}%`.padStart(17)
+        `${coverage}%`.padStart(
+          17
+        )
       ) +
       chalk.white(' ║')
     );
