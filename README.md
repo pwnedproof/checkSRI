@@ -62,7 +62,7 @@ node cli.js https://example.com
 For example:
 
 ```bash
-node cli.js https://www.mynamsa.org
+node cli.js https://www.example.com
 ```
 
 Do **not** include Markdown formatting such as:
