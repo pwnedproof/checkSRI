@@ -411,9 +411,7 @@ The author is not responsible for misuse of this tool.
 
 #  License
 
-MIT License.
-
-See [`LICENSE`](LICENSE) for details.
+See LISENCE for further details
 
 ---
 
