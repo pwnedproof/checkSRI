@@ -49,9 +49,6 @@ const EXCLUDED_DOMAINS = [
   // Common dynamic/security services
   'incapsula.com',
   'imperva.com',
-
-  // Known dynamic/CDN resources where SRI is generally not useful
-  'cdn.jsdelivr.net'
 ];
 
 /*
