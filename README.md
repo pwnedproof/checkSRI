@@ -265,7 +265,7 @@ SRI Detector
 📥 Fetching https://example.com...
 
 ╔════════════════════════════════════════╗
-║          RESULTS SUMMARY              ║
+║          RESULTS SUMMARY               ║
 ╚════════════════════════════════════════╝
 
 ✅ VALID (8)
@@ -285,13 +285,13 @@ SRI Detector
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 ╔════════════════════════════════════════╗
-║              STATISTICS               ║
+║              STATISTICS                ║
 ╠════════════════════════════════════════╣
-║ Total Resources:                     12 ║
-║ Valid:                                8 ║
-║ Invalid:                              1 ║
-║ Missing:                              3 ║
-║ Errors:                               0 ║
+║ Total Resources:                    12 ║
+║ Valid:                               8 ║
+║ Invalid:                             1 ║
+║ Missing:                             3 ║
+║ Errors:                              0 ║
 ╚════════════════════════════════════════╝
 ```
 
