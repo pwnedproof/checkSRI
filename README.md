@@ -35,7 +35,7 @@ checkSRI scans external JavaScript and CSS resources and verifies whether their 
 
 ### Requirements
 
-* Node.js 14+
+* Node.js 
 * npm
 * Git
 
